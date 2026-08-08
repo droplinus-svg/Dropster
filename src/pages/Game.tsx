@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   getCurrentlyPlaying,
   getPlaybackVolume,
-  pausePlayback,
   setVolume,
   skipNext,
   startPlaylist,
@@ -10,6 +9,9 @@ import {
 } from "../spotify/api";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// TEST: leise weiterlaufen lassen (statt stumm/pausieren), um die Verbindung
+// zu halten. Wenn das hilft, koennen wir den Wert spaeter feinjustieren.
+const REVEAL_VOLUME = 10;
 
 function isDeviceError(m: string): boolean {
   const s = m.toLowerCase();
@@ -113,13 +115,12 @@ export function Game({
         try {
           const v = await getPlaybackVolume();
           setSavedVol(v && v > 0 ? v : 70);
-          await setVolume(0, deviceId);
+          // TEST: leise weiterlaufen lassen statt stumm/pausieren.
+          await setVolume(REVEAL_VOLUME, deviceId);
         } catch {
-          try {
-            await pausePlayback(deviceId);
-          } catch {
-            /* egal */
-          }
+          setMsg(
+            "Hinweis (Test): Lautstärke ließ sich nicht senken – der Song läuft normal weiter."
+          );
         }
       }
     } catch (e) {
