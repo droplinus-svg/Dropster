@@ -41,6 +41,17 @@ body {
 }
 .brand span { color: var(--accent); }
 
+.topbar {
+  display: flex;
+  align-items: center;
+}
+.header-logo {
+  height: 40px;
+  width: 40px;
+  border-radius: 10px;
+  display: block;
+}
+
 .panel {
   background: var(--panel);
   border-radius: var(--radius);

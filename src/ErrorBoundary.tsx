@@ -15,9 +15,9 @@ export class ErrorBoundary extends Component<
     if (this.state.error) {
       return (
         <div className="app">
-          <div className="brand">
-            Drop<span>ster</span>
-          </div>
+          <header className="topbar">
+            <img src="/icon-192.png" className="header-logo" alt="Dropster" />
+          </header>
           <div className="panel stack">
             <strong>Ups – etwas ist schiefgelaufen</strong>
             <p className="muted">{this.state.error.message}</p>

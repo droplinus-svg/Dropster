@@ -120,16 +120,35 @@ export async function pickBestDeviceId(): Promise<string | null> {
   return target?.id ?? null;
 }
 
-// Einen Song auf dem besten Geraet starten (frische Kennung im Moment des
-// Abspielens – faengt die iOS-Faelle "Device not found" / "No active device" ab).
+// Einen Song starten – mit Fallback und aussagekraeftiger Diagnose.
 export async function startTrack(uri: string): Promise<void> {
-  const id = await pickBestDeviceId();
-  if (!id) {
+  const devices = await getDevices();
+  const target =
+    devices.find((d) => d.type.toLowerCase() === "smartphone") ??
+    devices.find((d) => d.is_active) ??
+    devices[0];
+  if (!target?.id) {
     throw new Error(
-      "Kein aktives Spotify-Gerät gefunden. Starte in der Spotify-App auf dem iPhone kurz einen Song und lass ihn laufen."
+      "Kein Spotify-Gerät gefunden. Starte in der Spotify-App auf dem iPhone kurz einen Song und lass ihn laufen."
     );
   }
-  await playTrack(uri, id);
+  try {
+    // 1. Versuch: gezielt das gewaehlte Geraet ansteuern.
+    await playTrack(uri, target.id);
+  } catch {
+    try {
+      // 2. Versuch (Fallback): ohne feste Kennung auf dem aktiven Geraet.
+      await playTrack(uri);
+    } catch (e2) {
+      const liste =
+        devices
+          .map((d) => `${d.name}[${d.type}${d.is_active ? ",aktiv" : ""}]`)
+          .join(", ") || "keine";
+      throw new Error(
+        `${(e2 as Error).message} — Ziel: ${target.name} (${target.type}); gefundene Geräte: ${liste}`
+      );
+    }
+  }
 }
 
 // ---------- Playlists ----------

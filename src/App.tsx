@@ -64,9 +64,11 @@ export function App() {
 
   return (
     <div className="app">
-      <div className="brand">
-        Drop<span>ster</span>
-      </div>
+      {screen !== "login" && screen !== "loading" && (
+        <header className="topbar">
+          <img src="/icon-192.png" className="header-logo" alt="Dropster" />
+        </header>
+      )}
 
       {error && (
         <div className="panel">
