@@ -1,7 +1,9 @@
 import { useState } from "react";
 import {
   getCurrentlyPlaying,
+  getPlaybackVolume,
   pausePlayback,
+  setVolume,
   skipNext,
   startPlaylist,
   type NowPlaying,
@@ -34,6 +36,7 @@ export function Game({
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [current, setCurrent] = useState<NowPlaying | null>(null);
   const [played, setPlayed] = useState<Set<string>>(new Set());
+  const [savedVol, setSavedVol] = useState<number | null>(null);
   const [round, setRound] = useState(0);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -44,12 +47,12 @@ export function Game({
       await sleep(600);
       const np = await getCurrentlyPlaying();
       const id = np?.id;
-      if (!id) continue; // Song noch nicht geladen
+      if (!id) continue;
       if (!played.has(id)) {
         setPlayed((p) => new Set(p).add(id));
         return;
       }
-      await skipNext(dev); // schon gespielt -> weiter
+      await skipNext(dev);
     }
   }
 
@@ -63,6 +66,14 @@ export function Game({
         setDeviceId(dev);
       } else {
         await skipNext(dev);
+      }
+      // Lautstaerke wieder hoch (nach dem stummen "Loesen").
+      if (savedVol != null) {
+        try {
+          await setVolume(savedVol, dev);
+        } catch {
+          /* egal */
+        }
       }
       await avoidRepeat(dev);
       setRound((r) => r + 1);
@@ -96,7 +107,21 @@ export function Game({
       }
       setCurrent(np);
       setPhase("meta");
-      await pausePlayback(deviceId ?? undefined);
+      // Statt Pause: stummschalten – so bleibt die Spotify-App aktiv und die
+      // Verbindung reißt in der Ratephase nicht ab.
+      if (deviceId) {
+        try {
+          const v = await getPlaybackVolume();
+          setSavedVol(v && v > 0 ? v : 70);
+          await setVolume(0, deviceId);
+        } catch {
+          try {
+            await pausePlayback(deviceId);
+          } catch {
+            /* egal */
+          }
+        }
+      }
     } catch (e) {
       setMsg((e as Error).message);
     } finally {
@@ -108,57 +133,61 @@ export function Game({
 
   return (
     <div className="stack">
-      {phase === "idle" && (
-        <button className="big-play" disabled={busy} onClick={playRound}>
-          {busy ? "…" : "Song abspielen"}
-        </button>
-      )}
-
-      {phase === "playing" && (
-        <div className="playing-hero">
-          <div className="eq">
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
-          <p className="question">
-            Ein Song läuft 🎧
-            <br />
-            Aus welchem <span>Jahr</span> ist er?
-          </p>
-          <button className="big-solve" disabled={busy} onClick={reveal}>
-            {busy ? "…" : "Lösen"}
+      <div className="game-stage">
+        {phase === "idle" && (
+          <button className="big-play" disabled={busy} onClick={playRound}>
+            {busy ? "…" : "Song abspielen"}
           </button>
-        </div>
-      )}
+        )}
 
-      {(phase === "meta" || phase === "year") && current && (
-        <div className="reveal-card">
-          <div className="lbl">Titel</div>
-          <div className="reveal-title">{current.name}</div>
-          <div className="lbl">Interpret</div>
-          <div className="reveal-artist">{current.artists.join(", ")}</div>
-
-          {phase === "meta" && (
-            <button disabled={busy} onClick={() => setPhase("year")}>
-              Jahr zeigen
+        {phase === "playing" && (
+          <div className="playing-hero">
+            <div className="eq">
+              <span />
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+            <p className="question">
+              Ein Song läuft 🎧
+              <br />
+              Aus welchem <span>Jahr</span> ist er?
+            </p>
+            <button className="big-solve" disabled={busy} onClick={reveal}>
+              {busy ? "…" : "Lösen"}
             </button>
-          )}
+          </div>
+        )}
 
-          {phase === "year" && (
-            <>
-              <div className="lbl">Erschienen</div>
-              <div className="reveal-year">{current.year ?? "—"}</div>
-              <span className="badge low">Jahr noch vorläufig aus Spotify</span>
-              <button disabled={busy} onClick={playRound}>
-                {busy ? "…" : "Nächste Runde"}
+        {(phase === "meta" || phase === "year") && current && (
+          <div className="reveal-card">
+            <div className="lbl">Titel</div>
+            <div className="reveal-title">{current.name}</div>
+            <div className="lbl">Interpret</div>
+            <div className="reveal-artist">{current.artists.join(", ")}</div>
+
+            {phase === "meta" && (
+              <button disabled={busy} onClick={() => setPhase("year")}>
+                Jahr zeigen
               </button>
-            </>
-          )}
-        </div>
-      )}
+            )}
+
+            {phase === "year" && (
+              <>
+                <div className="lbl">Erschienen</div>
+                <div className="reveal-year">{current.year ?? "—"}</div>
+                <span className="badge low">
+                  Jahr noch vorläufig aus Spotify
+                </span>
+                <button disabled={busy} onClick={playRound}>
+                  {busy ? "…" : "Nächste Runde"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {msg && (
         <div className={deviceLost ? "alert stack" : "panel"}>

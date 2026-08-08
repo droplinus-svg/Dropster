@@ -224,6 +224,27 @@ export async function getCurrentlyPlaying(): Promise<NowPlaying | null> {
   };
 }
 
+// Lautstaerke setzen – wir nutzen "auf 0" als sanftes "Stopp", das die
+// Spotify-App aktiv (und damit verbunden) haelt.
+export async function setVolume(
+  percent: number,
+  deviceId: string
+): Promise<void> {
+  await api(
+    `/me/player/volume?volume_percent=${Math.round(
+      percent
+    )}&device_id=${deviceId}`,
+    { method: "PUT" }
+  );
+}
+
+export async function getPlaybackVolume(): Promise<number | null> {
+  const data = await api<{ device?: { volume_percent?: number } } | undefined>(
+    "/me/player"
+  );
+  return data?.device?.volume_percent ?? null;
+}
+
 // ---------- Playlists ----------
 export async function getMyPlaylists(): Promise<SpotifyPlaylist[]> {
   const out: SpotifyPlaylist[] = [];

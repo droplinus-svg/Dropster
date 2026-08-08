@@ -16,8 +16,6 @@ export function Login() {
       <div className="panel stack">
         <p className="muted">
           Melde dich mit deinem <strong>Spotify-Premium-Konto</strong> an.
-          Dropster steuert die Spotify-App auf diesem Handy – der Ton kommt aus
-          Spotify selbst.
         </p>
         <button onClick={() => beginLogin()}>Mit Spotify anmelden</button>
       </div>
