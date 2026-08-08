@@ -1,82 +1,44 @@
 import { useState } from "react";
-import { pausePlayback, startTrack, type Track } from "../spotify/api";
+import {
+  getCurrentlyPlaying,
+  pausePlayback,
+  skipNext,
+  startPlaylist,
+  type NowPlaying,
+} from "../spotify/api";
 
-// Geraet-/Verbindungsfehler (kein Track-Problem) von Track-Fehlern unterscheiden.
-function isDeviceError(message: string): boolean {
-  const s = message.toLowerCase();
-  return s.includes("gerät") || s.includes("device") || s.includes("no active");
-}
-
-// Der Spielablauf: Song blind abspielen -> Loesen -> Jahr/Titel/Interpret zeigen.
+// Spielablauf OHNE Titel-Auslesen: Playlist als Kontext mit Zufall starten,
+// beim Loesen "was laeuft gerade?" abfragen, fuer die naechste Runde "weiter".
 export function Game({
-  tracks,
+  playlistId,
   playlistName,
   onChangePlaylist,
 }: {
-  tracks: Track[];
+  playlistId: string;
   playlistName: string;
   onChangePlaylist: () => void;
 }) {
-  const [current, setCurrent] = useState<Track | null>(null);
-  const [revealed, setRevealed] = useState(false);
-  const [played, setPlayed] = useState<Set<string>>(new Set());
+  const [phase, setPhase] = useState<"idle" | "playing" | "revealed">("idle");
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [current, setCurrent] = useState<NowPlaying | null>(null);
+  const [round, setRound] = useState(0);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
-  const remaining = tracks.filter((t) => !played.has(t.uri)).length;
-
-  async function nextRound() {
+  // Startet die erste Runde (Playlist-Kontext) oder springt zur naechsten.
+  async function playRound() {
     setMsg("");
-    setRevealed(false);
-    let pool = tracks.filter((t) => !played.has(t.uri));
-    if (pool.length === 0) {
-      setMsg("Alle Songs dieser Playlist wurden gespielt. 🎉");
-      setCurrent(null);
-      return;
-    }
-    setBusy(true);
-    const skipped = new Set<string>();
-    let lastErr = "";
-
-    // Bis zu 8 Versuche: nicht abspielbare Songs (z. B. Region-Sperre) ueberspringen.
-    for (let i = 0; i < 8 && pool.length > 0; i++) {
-      const pick = pool[Math.floor(Math.random() * pool.length)];
-      try {
-        await startTrack(pick.uri);
-        setCurrent(pick);
-        setPlayed((prev) => new Set([...prev, ...skipped, pick.uri]));
-        if (skipped.size > 0) {
-          setMsg(`${skipped.size} nicht abspielbare Songs übersprungen.`);
-        }
-        setBusy(false);
-        return;
-      } catch (e) {
-        const m = (e as Error).message;
-        lastErr = m;
-        if (isDeviceError(m)) {
-          // Verbindungs-/Geraetefehler: nicht weiter-skippen, sondern melden.
-          setCurrent(null);
-          setMsg(m);
-          setBusy(false);
-          return;
-        }
-        skipped.add(pick.uri);
-        pool = pool.filter((t) => t.uri !== pick.uri);
-      }
-    }
-
-    setPlayed((prev) => new Set([...prev, ...skipped]));
     setCurrent(null);
-    setMsg("Konnte keinen abspielbaren Song finden. " + lastErr);
-    setBusy(false);
-  }
-
-  async function reveal() {
     setBusy(true);
-    setMsg("");
     try {
-      await pausePlayback();
-      setRevealed(true);
+      if (!deviceId) {
+        const id = await startPlaylist(playlistId);
+        setDeviceId(id);
+      } else {
+        await skipNext(deviceId);
+      }
+      setRound((r) => r + 1);
+      setPhase("playing");
     } catch (e) {
       setMsg((e as Error).message);
     } finally {
@@ -84,26 +46,42 @@ export function Game({
     }
   }
 
-  const year = current?.albumReleaseDate
-    ? current.albumReleaseDate.slice(0, 4)
-    : "—";
+  async function reveal() {
+    setBusy(true);
+    setMsg("");
+    try {
+      const np = await getCurrentlyPlaying();
+      if (!np) {
+        setMsg(
+          "Konnte den laufenden Song nicht lesen. Läuft in Spotify gerade wirklich etwas?"
+        );
+        return;
+      }
+      setCurrent(np);
+      setPhase("revealed");
+      // Nach dem Auslesen anhalten.
+      await pausePlayback(deviceId ?? undefined);
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="stack">
       <div className="panel stack">
         <span className="badge">{playlistName}</span>
-        <span className="muted">
-          Noch {remaining} von {tracks.length} Songs
-        </span>
+        <span className="muted">Runde {round}</span>
       </div>
 
-      {!current && (
-        <button className="big-play" disabled={busy} onClick={nextRound}>
+      {phase === "idle" && (
+        <button className="big-play" disabled={busy} onClick={playRound}>
           {busy ? "…" : "Song abspielen"}
         </button>
       )}
 
-      {current && !revealed && (
+      {phase === "playing" && (
         <div className="panel stack">
           <p className="muted" style={{ textAlign: "center" }}>
             🎵 Ein Song läuft – aus welchem Jahr ist er?
@@ -114,15 +92,15 @@ export function Game({
         </div>
       )}
 
-      {current && revealed && (
+      {phase === "revealed" && current && (
         <div className="panel stack">
-          <div className="reveal-year">{year}</div>
+          <div className="reveal-year">{current.year ?? "—"}</div>
           <div className="reveal-meta">
             <div className="reveal-title">{current.name}</div>
             <div className="reveal-artist">{current.artists.join(", ")}</div>
           </div>
           <span className="badge low">Jahr noch vorläufig aus Spotify</span>
-          <button disabled={busy} onClick={nextRound}>
+          <button disabled={busy} onClick={playRound}>
             {busy ? "…" : "Nächste Runde"}
           </button>
         </div>

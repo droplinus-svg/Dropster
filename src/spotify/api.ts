@@ -151,6 +151,79 @@ export async function startTrack(uri: string): Promise<void> {
   }
 }
 
+// ---------- Kontext-Wiedergabe (umgeht das gesperrte Titel-Auslesen) ----------
+
+export async function setShuffle(
+  state: boolean,
+  deviceId: string
+): Promise<void> {
+  await api(`/me/player/shuffle?state=${state}&device_id=${deviceId}`, {
+    method: "PUT",
+  });
+}
+
+export async function skipNext(deviceId: string): Promise<void> {
+  await api(`/me/player/next?device_id=${deviceId}`, { method: "POST" });
+}
+
+// Playlist als Kontext mit Zufall starten – liefert das genutzte Geraet zurueck.
+export async function startPlaylist(playlistId: string): Promise<string> {
+  const devices = await getDevices();
+  const target =
+    devices.find((d) => d.type.toLowerCase() === "smartphone") ??
+    devices.find((d) => d.is_active) ??
+    devices[0];
+  if (!target?.id) {
+    throw new Error(
+      "Kein Spotify-Gerät gefunden. Starte in der Spotify-App auf dem iPhone kurz einen Song und lass ihn laufen."
+    );
+  }
+  try {
+    await setShuffle(true, target.id);
+  } catch {
+    /* Shuffle ist optional */
+  }
+  await api(`/me/player/play?device_id=${target.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ context_uri: `spotify:playlist:${playlistId}` }),
+  });
+  return target.id;
+}
+
+export interface NowPlaying {
+  id: string | null;
+  name: string;
+  artists: string[];
+  year: string | null;
+  isrc: string | null;
+}
+
+// "Was laeuft gerade?" – so bekommen wir Titel/Interpret/Jahr, ohne die
+// Playlist auszulesen.
+export async function getCurrentlyPlaying(): Promise<NowPlaying | null> {
+  const data = await api<
+    | {
+        item?: {
+          id: string;
+          name: string;
+          artists: { name: string }[];
+          album?: { release_date?: string };
+          external_ids?: { isrc?: string };
+        } | null;
+      }
+    | undefined
+  >("/me/player/currently-playing");
+  const it = data?.item;
+  if (!it) return null;
+  return {
+    id: it.id ?? null,
+    name: it.name,
+    artists: it.artists.map((a) => a.name),
+    year: it.album?.release_date ? it.album.release_date.slice(0, 4) : null,
+    isrc: it.external_ids?.isrc ?? null,
+  };
+}
+
 // ---------- Playlists ----------
 export async function getMyPlaylists(): Promise<SpotifyPlaylist[]> {
   const out: SpotifyPlaylist[] = [];

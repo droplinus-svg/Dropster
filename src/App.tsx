@@ -1,27 +1,17 @@
 import { useEffect, useState } from "react";
 import { handleCallback, isLoggedIn, logout } from "./spotify/auth";
-import {
-  getPlaylistTracks,
-  type SpotifyPlaylist,
-  type Track,
-} from "./spotify/api";
+import { type SpotifyPlaylist } from "./spotify/api";
 import { Login } from "./pages/Login";
 import { Welcome } from "./pages/Welcome";
 import { PlaylistSelect } from "./pages/PlaylistSelect";
 import { Game } from "./pages/Game";
 
-type Screen =
-  | "loading"
-  | "login"
-  | "welcome"
-  | "playlists"
-  | "loadingTracks"
-  | "game";
+type Screen = "loading" | "login" | "welcome" | "playlists" | "game";
 
 export function App() {
   const [screen, setScreen] = useState<Screen>("loading");
   const [error, setError] = useState<string | null>(null);
-  const [tracks, setTracks] = useState<Track[]>([]);
+  const [playlistId, setPlaylistId] = useState("");
   const [playlistName, setPlaylistName] = useState("");
 
   useEffect(() => {
@@ -42,24 +32,13 @@ export function App() {
     })();
   }, []);
 
-  async function pickPlaylist(pl: SpotifyPlaylist) {
-    setScreen("loadingTracks");
+  function pickPlaylist(pl: SpotifyPlaylist) {
+    // Kein Titel-Auslesen (von Spotify gesperrt) – wir spielen die Playlist
+    // als Kontext ab. Also einfach ID/Name merken und ins Spiel.
     setError(null);
-    try {
-      const t = await getPlaylistTracks(pl.id);
-      const usable = t.filter((x) => x.uri);
-      if (usable.length === 0) {
-        setError("Diese Playlist enthält keine abspielbaren Songs.");
-        setScreen("playlists");
-        return;
-      }
-      setTracks(usable);
-      setPlaylistName(pl.name);
-      setScreen("game");
-    } catch (e) {
-      setError((e as Error).message);
-      setScreen("playlists");
-    }
+    setPlaylistId(pl.id);
+    setPlaylistName(pl.name);
+    setScreen("game");
   }
 
   return (
@@ -94,12 +73,9 @@ export function App() {
           }}
         />
       )}
-      {screen === "loadingTracks" && (
-        <p className="muted">Playlist wird geladen …</p>
-      )}
       {screen === "game" && (
         <Game
-          tracks={tracks}
+          playlistId={playlistId}
           playlistName={playlistName}
           onChangePlaylist={() => setScreen("playlists")}
         />
