@@ -84,10 +84,22 @@ export function PlaybackTest({ onLoggedOut }: { onLoggedOut: () => void }) {
             disabled={busy}
             onClick={() =>
               guard(async () => {
-                // Kein device_id, keine Uebertragung: einfach dem aktiven
-                // Geraet (dem laufenden iPhone) sagen, diesen Song zu spielen.
-                await playTrack(TEST_TRACK_URI);
-                setMsg("▶️ Läuft – hörst du den Testsong?");
+                // Im Moment des Abspielens frisch nachsehen und gezielt das
+                // Smartphone mit seiner AKTUELLEN Kennung ansteuern. Das faengt
+                // sowohl "Device not found" (veraltete Kennung) als auch
+                // "No active device" ab.
+                const list = await getDevices();
+                const target =
+                  list.find((d) => d.type.toLowerCase() === "smartphone") ??
+                  list.find((d) => d.is_active) ??
+                  list[0];
+                if (!target?.id) {
+                  throw new Error(
+                    "Kein Spotify-Gerät gefunden. Öffne die Spotify-App auf dem iPhone, starte kurz einen Song und lass ihn LAUFEN – dann sofort wieder hier auf ‚Testsong abspielen‘."
+                  );
+                }
+                await playTrack(TEST_TRACK_URI, target.id);
+                setMsg(`▶️ Läuft auf: ${target.name} – hörst du den Testsong?`);
               })
             }
           >
