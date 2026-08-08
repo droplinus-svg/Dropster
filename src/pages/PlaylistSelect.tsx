@@ -39,7 +39,7 @@ export function PlaylistSelect({
               className="secondary"
               onClick={() => onPick(pl)}
             >
-              {pl.name} · {pl.tracks.total} Songs
+              {pl.name} · {pl.tracks?.total ?? "?"} Songs
             </button>
           ))}
         </div>

@@ -132,7 +132,7 @@ export async function getMyPlaylists(): Promise<SpotifyPlaylist[]> {
       items: SpotifyPlaylist[];
       next: string | null;
     }>(url);
-    out.push(...data.items);
+    out.push(...data.items.filter((p): p is SpotifyPlaylist => !!p));
     if (!data.next) break;
     url = data.next.replace(BASE, "");
   }
