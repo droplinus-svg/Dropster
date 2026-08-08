@@ -20,10 +20,6 @@ export function Login() {
           Spotify selbst.
         </p>
         <button onClick={() => beginLogin()}>Mit Spotify anmelden</button>
-        <p className="muted">
-          Tipp: Öffne vor dem Spielen einmal die Spotify-App und drücke kurz
-          Play, damit dieses Handy als Wiedergabegerät erkannt wird.
-        </p>
       </div>
     </div>
   );

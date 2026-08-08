@@ -8,6 +8,10 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      // Vorerst KEIN aggressives Caching: Der Service Worker entfernt sich
+      // selbst und raeumt alte Caches ab, damit iOS immer die frische Version
+      // von Netlify laedt. (Spaeter, wenn die App stabil ist, wieder aktivieren.)
+      selfDestroying: true,
       includeAssets: ["favicon.svg"],
       manifest: {
         name: "Dropster",

@@ -56,7 +56,9 @@ export async function beginLogin(): Promise<void> {
 // Schritt 2: Nach dem Redirect den Code gegen ein Token tauschen.
 export async function handleCallback(code: string): Promise<void> {
   const verifier = localStorage.getItem(VERIFIER_KEY);
-  if (!verifier) throw new Error("Kein PKCE-Verifier gefunden.");
+  // Kein laufender Login (z. B. veralteter Code in der URL): still ignorieren,
+  // damit nicht faelschlich ein Fehler erscheint.
+  if (!verifier) return;
 
   const body = new URLSearchParams({
     client_id: SPOTIFY_CLIENT_ID,
