@@ -66,7 +66,11 @@ export function App() {
     <div className="app">
       {screen !== "login" && screen !== "loading" && (
         <header className="topbar">
-          <img src="/icon-192.png" className="header-logo" alt="Dropster" />
+          <img
+            src="/logo.png"
+            className="header-logo"
+            alt="Dropster – Name that Track"
+          />
         </header>
       )}
 

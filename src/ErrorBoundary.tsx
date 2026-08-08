@@ -16,7 +16,11 @@ export class ErrorBoundary extends Component<
       return (
         <div className="app">
           <header className="topbar">
-            <img src="/icon-192.png" className="header-logo" alt="Dropster" />
+            <img
+              src="/logo.png"
+              className="header-logo"
+              alt="Dropster – Name that Track"
+            />
           </header>
           <div className="panel stack">
             <strong>Ups – etwas ist schiefgelaufen</strong>

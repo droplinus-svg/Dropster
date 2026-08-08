@@ -43,12 +43,12 @@ body {
 
 .topbar {
   display: flex;
-  align-items: center;
+  justify-content: center;
 }
 .header-logo {
-  height: 40px;
-  width: 40px;
-  border-radius: 10px;
+  width: 100%;
+  max-width: 200px;
+  height: auto;
   display: block;
 }
 

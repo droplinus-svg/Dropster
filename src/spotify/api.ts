@@ -173,8 +173,9 @@ export async function getPlaylistTracks(playlistId: string): Promise<Track[]> {
   const out: Track[] = [];
   const fields =
     "items(track(uri,name,is_local,is_playable,external_ids(isrc),artists(name,id),album(release_date))),next";
-  // market=from_token liefert das is_playable-Flag fuer den Markt des Nutzers.
-  let url = `/playlists/${playlistId}/tracks?limit=100&market=from_token&fields=${encodeURIComponent(
+  // Kein market-Parameter: Spotify nutzt bei einem Nutzer-Token automatisch
+  // dessen Land. (market=from_token braucht user-read-private und wirft sonst 403.)
+  let url = `/playlists/${playlistId}/tracks?limit=100&fields=${encodeURIComponent(
     fields
   )}`;
   for (;;) {
