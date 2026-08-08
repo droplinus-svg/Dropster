@@ -37,7 +37,14 @@ async function api<T>(
   if (!res.ok) {
     throw new Error(`Spotify API ${res.status}: ${body}`);
   }
-  return (body ? JSON.parse(body) : undefined) as T;
+  // Player-Endpoints (play/pause/transfer) liefern manchmal einen leeren oder
+  // nicht-JSON-Body. Nur parsen, wenn es wirklich JSON ist – sonst undefined.
+  if (!body.trim()) return undefined as T;
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    return undefined as T;
+  }
 }
 
 // ---------- Typen ----------
