@@ -168,36 +168,29 @@ export async function getMyPlaylists(): Promise<SpotifyPlaylist[]> {
   return out;
 }
 
-// Alle Tracks einer Playlist (paginiert), auf das Noetige reduziert.
+// Titel einer Playlist laden.
+// WICHTIG: GET /playlists/{id}/tracks ist fuer Development-Mode-Apps von Spotify
+// gesperrt (403). Wir lesen die Titel daher aus dem Playlist-OBJEKT
+// (GET /playlists/{id}), das die erste Seite (bis ~100 Titel) direkt enthaelt.
 export async function getPlaylistTracks(playlistId: string): Promise<Track[]> {
-  const out: Track[] = [];
   const fields =
-    "items(track(uri,name,is_local,is_playable,external_ids(isrc),artists(name,id),album(release_date))),next";
-  // Kein market-Parameter: Spotify nutzt bei einem Nutzer-Token automatisch
-  // dessen Land. (market=from_token braucht user-read-private und wirft sonst 403.)
-  let url = `/playlists/${playlistId}/tracks?limit=100&fields=${encodeURIComponent(
-    fields
-  )}`;
-  for (;;) {
-    const data = await api<{
-      items: { track: RawTrack | null }[];
-      next: string | null;
-    }>(url);
-    for (const item of data.items) {
-      const t = item.track;
-      // Entfernte, lokale und im Markt nicht abspielbare Tracks ueberspringen.
-      if (!t || !t.uri || t.is_local || t.is_playable === false) continue;
-      out.push({
-        uri: t.uri,
-        name: t.name,
-        isrc: t.external_ids?.isrc ?? null,
-        artists: t.artists.map((a) => a.name),
-        artistIds: t.artists.map((a) => a.id),
-        albumReleaseDate: t.album?.release_date ?? null,
-      });
-    }
-    if (!data.next) break;
-    url = data.next.replace(BASE, "");
+    "tracks.items(track(uri,name,is_local,external_ids(isrc),artists(name,id),album(release_date)))";
+  const data = await api<{
+    tracks?: { items?: { track: RawTrack | null }[] };
+  }>(`/playlists/${playlistId}?fields=${encodeURIComponent(fields)}`);
+
+  const out: Track[] = [];
+  for (const item of data.tracks?.items ?? []) {
+    const t = item.track;
+    if (!t || !t.uri || t.is_local) continue; // entfernte/lokale Tracks weg
+    out.push({
+      uri: t.uri,
+      name: t.name,
+      isrc: t.external_ids?.isrc ?? null,
+      artists: t.artists.map((a) => a.name),
+      artistIds: t.artists.map((a) => a.id),
+      albumReleaseDate: t.album?.release_date ?? null,
+    });
   }
   return out;
 }
