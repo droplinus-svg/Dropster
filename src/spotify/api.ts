@@ -6,7 +6,8 @@ const BASE = "https://api.spotify.com/v1";
 
 async function api<T>(
   path: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
+  attempt = 0
 ): Promise<T> {
   const token = await getAccessToken();
   if (!token) throw new Error("Nicht eingeloggt.");
@@ -22,12 +23,21 @@ async function api<T>(
     logout();
     throw new Error("Session abgelaufen – bitte neu einloggen.");
   }
-  if (res.status === 204) return undefined as T; // z. B. play/pause
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Spotify API ${res.status}: ${text}`);
+  // Spotify-Player-Endpoints liefern gelegentlich 5xx, wenn das Geraet
+  // gerade erst aktiv geworden ist. Kurz warten und automatisch erneut
+  // versuchen (bis zu 3-mal).
+  if (res.status >= 500 && attempt < 3) {
+    await new Promise((r) => setTimeout(r, 600));
+    return api<T>(path, init, attempt + 1);
   }
-  return (await res.json()) as T;
+  // Wichtig fuer iOS Safari: bei leerem Body wirft res.json() den Fehler
+  // "The string did not match the expected pattern". Daher Body als Text
+  // lesen und nur bei tatsaechlichem Inhalt als JSON parsen.
+  const body = await res.text();
+  if (!res.ok) {
+    throw new Error(`Spotify API ${res.status}: ${body}`);
+  }
+  return (body ? JSON.parse(body) : undefined) as T;
 }
 
 // ---------- Typen ----------
