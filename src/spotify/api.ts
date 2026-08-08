@@ -100,6 +100,28 @@ export async function pausePlayback(deviceId?: string): Promise<void> {
   await api(`/me/player/pause${query}`, { method: "PUT" });
 }
 
+// Bestes Zielgeraet ermitteln – bevorzugt das Smartphone (das Spiel-Handy).
+export async function pickBestDeviceId(): Promise<string | null> {
+  const devices = await getDevices();
+  const target =
+    devices.find((d) => d.type.toLowerCase() === "smartphone") ??
+    devices.find((d) => d.is_active) ??
+    devices[0];
+  return target?.id ?? null;
+}
+
+// Einen Song auf dem besten Geraet starten (frische Kennung im Moment des
+// Abspielens – faengt die iOS-Faelle "Device not found" / "No active device" ab).
+export async function startTrack(uri: string): Promise<void> {
+  const id = await pickBestDeviceId();
+  if (!id) {
+    throw new Error(
+      "Kein aktives Spotify-Gerät gefunden. Starte in der Spotify-App auf dem iPhone kurz einen Song und lass ihn laufen."
+    );
+  }
+  await playTrack(uri, id);
+}
+
 // ---------- Playlists ----------
 export async function getMyPlaylists(): Promise<SpotifyPlaylist[]> {
   const out: SpotifyPlaylist[] = [];
