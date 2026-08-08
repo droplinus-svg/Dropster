@@ -173,14 +173,15 @@ export async function getMyPlaylists(): Promise<SpotifyPlaylist[]> {
 // gesperrt (403). Wir lesen die Titel daher aus dem Playlist-OBJEKT
 // (GET /playlists/{id}), das die erste Seite (bis ~100 Titel) direkt enthaelt.
 export async function getPlaylistTracks(playlistId: string): Promise<Track[]> {
-  const fields =
-    "tracks.items(track(uri,name,is_local,external_ids(isrc),artists(name,id),album(release_date)))";
+  // Volle Antwort (kein fields-Filter), damit nichts an einer Feld-Projektion
+  // scheitert.
   const data = await api<{
-    tracks?: { items?: { track: RawTrack | null }[] };
-  }>(`/playlists/${playlistId}?fields=${encodeURIComponent(fields)}`);
+    tracks?: { total?: number; items?: { track: RawTrack | null }[] };
+  }>(`/playlists/${playlistId}`);
 
+  const items = data.tracks?.items ?? [];
   const out: Track[] = [];
-  for (const item of data.tracks?.items ?? []) {
+  for (const item of items) {
     const t = item.track;
     if (!t || !t.uri || t.is_local) continue; // entfernte/lokale Tracks weg
     out.push({
@@ -191,6 +192,15 @@ export async function getPlaylistTracks(playlistId: string): Promise<Track[]> {
       artistIds: t.artists.map((a) => a.id),
       albumReleaseDate: t.album?.release_date ?? null,
     });
+  }
+
+  // Diagnose im Leerfall: sagt uns, ob Spotify die Titel abstreift.
+  if (out.length === 0) {
+    const total = data.tracks?.total ?? "?";
+    throw new Error(
+      `Playlist geladen, aber 0 nutzbare Titel. Spotify meldet total=${total}, gelieferte Einträge=${items.length}. ` +
+        `(total>0 aber Einträge=0 → Spotify sperrt die Titel-Daten; sonst Filter-/Parsing-Frage.)`
+    );
   }
   return out;
 }
