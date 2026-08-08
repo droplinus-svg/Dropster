@@ -35,7 +35,17 @@ async function api<T>(
   // lesen und nur bei tatsaechlichem Inhalt als JSON parsen.
   const body = await res.text();
   if (!res.ok) {
-    throw new Error(`Spotify API ${res.status}: ${body}`);
+    // Spotifys konkreten Grund herausziehen, statt nur "Forbidden" zu zeigen.
+    let detail = body;
+    try {
+      const j = JSON.parse(body);
+      const m: string | undefined = j?.error?.message;
+      const reason: string | undefined = j?.error?.reason;
+      detail = reason ? `${m ?? ""} (Grund: ${reason})` : m ?? body;
+    } catch {
+      /* Body ist kein JSON – Rohtext behalten */
+    }
+    throw new Error(`Spotify API ${res.status}: ${detail}`);
   }
   // Player-Endpoints (play/pause/transfer) liefern manchmal einen leeren oder
   // nicht-JSON-Body. Nur parsen, wenn es wirklich JSON ist – sonst undefined.
@@ -143,8 +153,9 @@ export async function getMyPlaylists(): Promise<SpotifyPlaylist[]> {
 export async function getPlaylistTracks(playlistId: string): Promise<Track[]> {
   const out: Track[] = [];
   const fields =
-    "items(track(uri,name,external_ids(isrc),artists(name,id),album(release_date))),next";
-  let url = `/playlists/${playlistId}/tracks?limit=100&fields=${encodeURIComponent(
+    "items(track(uri,name,is_local,is_playable,external_ids(isrc),artists(name,id),album(release_date))),next";
+  // market=from_token liefert das is_playable-Flag fuer den Markt des Nutzers.
+  let url = `/playlists/${playlistId}/tracks?limit=100&market=from_token&fields=${encodeURIComponent(
     fields
   )}`;
   for (;;) {
@@ -154,7 +165,8 @@ export async function getPlaylistTracks(playlistId: string): Promise<Track[]> {
     }>(url);
     for (const item of data.items) {
       const t = item.track;
-      if (!t || !t.uri) continue; // entfernte/lokale Tracks ueberspringen
+      // Entfernte, lokale und im Markt nicht abspielbare Tracks ueberspringen.
+      if (!t || !t.uri || t.is_local || t.is_playable === false) continue;
       out.push({
         uri: t.uri,
         name: t.name,
@@ -173,6 +185,8 @@ export async function getPlaylistTracks(playlistId: string): Promise<Track[]> {
 interface RawTrack {
   uri: string;
   name: string;
+  is_local?: boolean;
+  is_playable?: boolean;
   external_ids?: { isrc?: string };
   artists: { name: string; id: string }[];
   album?: { release_date?: string };

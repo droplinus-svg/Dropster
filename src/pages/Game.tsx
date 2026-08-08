@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { pausePlayback, startTrack, type Track } from "../spotify/api";
 
+// Geraet-/Verbindungsfehler (kein Track-Problem) von Track-Fehlern unterscheiden.
+function isDeviceError(message: string): boolean {
+  const s = message.toLowerCase();
+  return s.includes("gerät") || s.includes("device") || s.includes("no active");
+}
+
 // Der Spielablauf: Song blind abspielen -> Loesen -> Jahr/Titel/Interpret zeigen.
 export function Game({
   tracks,
@@ -22,23 +28,47 @@ export function Game({
   async function nextRound() {
     setMsg("");
     setRevealed(false);
-    const pool = tracks.filter((t) => !played.has(t.uri));
+    let pool = tracks.filter((t) => !played.has(t.uri));
     if (pool.length === 0) {
       setMsg("Alle Songs dieser Playlist wurden gespielt. 🎉");
       setCurrent(null);
       return;
     }
-    const pick = pool[Math.floor(Math.random() * pool.length)];
     setBusy(true);
-    try {
-      await startTrack(pick.uri);
-      setCurrent(pick);
-      setPlayed((prev) => new Set(prev).add(pick.uri));
-    } catch (e) {
-      setMsg((e as Error).message);
-    } finally {
-      setBusy(false);
+    const skipped = new Set<string>();
+    let lastErr = "";
+
+    // Bis zu 8 Versuche: nicht abspielbare Songs (z. B. Region-Sperre) ueberspringen.
+    for (let i = 0; i < 8 && pool.length > 0; i++) {
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      try {
+        await startTrack(pick.uri);
+        setCurrent(pick);
+        setPlayed((prev) => new Set([...prev, ...skipped, pick.uri]));
+        if (skipped.size > 0) {
+          setMsg(`${skipped.size} nicht abspielbare Songs übersprungen.`);
+        }
+        setBusy(false);
+        return;
+      } catch (e) {
+        const m = (e as Error).message;
+        lastErr = m;
+        if (isDeviceError(m)) {
+          // Verbindungs-/Geraetefehler: nicht weiter-skippen, sondern melden.
+          setCurrent(null);
+          setMsg(m);
+          setBusy(false);
+          return;
+        }
+        skipped.add(pick.uri);
+        pool = pool.filter((t) => t.uri !== pick.uri);
+      }
     }
+
+    setPlayed((prev) => new Set([...prev, ...skipped]));
+    setCurrent(null);
+    setMsg("Konnte keinen abspielbaren Song finden. " + lastErr);
+    setBusy(false);
   }
 
   async function reveal() {
