@@ -5,6 +5,7 @@ import { Login } from "./pages/Login";
 import { Welcome } from "./pages/Welcome";
 import { PlaylistSelect } from "./pages/PlaylistSelect";
 import { Game } from "./pages/Game";
+import { Info } from "./pages/Info";
 
 type Screen = "loading" | "login" | "welcome" | "playlists" | "game";
 
@@ -13,6 +14,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [playlistId, setPlaylistId] = useState("");
   const [playlistName, setPlaylistName] = useState("");
+  const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -43,6 +45,17 @@ export function App() {
 
   return (
     <div className="app">
+      {screen !== "loading" && (
+        <button
+          className="info-btn"
+          aria-label="Spielanleitung"
+          onClick={() => setShowInfo(true)}
+        >
+          i
+        </button>
+      )}
+      {showInfo && <Info onClose={() => setShowInfo(false)} />}
+
       {screen !== "login" && screen !== "loading" && (
         <header className="topbar">
           <img

@@ -33,7 +33,9 @@ export function PlaylistSelect({
         {loading && <p className="muted">Lade Playlists …</p>}
         {msg && <p className="muted">{msg}</p>}
         <div className="stack">
-          {playlists.map((pl) => (
+          {[...playlists]
+            .sort((a, b) => a.name.localeCompare(b.name, "de"))
+            .map((pl) => (
             <button
               key={pl.id}
               className="secondary"

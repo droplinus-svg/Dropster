@@ -129,3 +129,123 @@ select, input {
   color: var(--muted);
 }
 .badge.low { background: #3a2a2a; color: #e0a0a0; }
+
+/* Spielablauf */
+.playing-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  padding: 24px 0 8px;
+}
+.eq {
+  display: flex;
+  gap: 8px;
+  height: 90px;
+  align-items: flex-end;
+}
+.eq span {
+  width: 14px;
+  height: 24px;
+  background: var(--accent);
+  border-radius: 8px;
+  animation: eq 0.9s ease-in-out infinite;
+}
+.eq span:nth-child(2) { animation-delay: 0.15s; }
+.eq span:nth-child(3) { animation-delay: 0.3s; }
+.eq span:nth-child(4) { animation-delay: 0.45s; }
+.eq span:nth-child(5) { animation-delay: 0.6s; }
+@keyframes eq {
+  0%, 100% { height: 24px; }
+  50% { height: 90px; }
+}
+.question {
+  font-size: 26px;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.35;
+  margin: 0;
+}
+.question span { color: var(--accent); }
+.big-solve { font-size: 22px; padding: 20px; border-radius: 20px; }
+
+.reveal-card {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+}
+.lbl {
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 14px;
+}
+.reveal-card .reveal-title { font-size: 26px; }
+.reveal-card .reveal-artist { font-size: 18px; }
+.reveal-card .reveal-year { font-size: 88px; margin: 4px 0; }
+.reveal-card button { margin-top: 20px; width: 100%; }
+
+.alert {
+  background: #3a1e22;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  padding: 18px;
+  color: #ffdcde;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.footer-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 8px;
+}
+.linklike {
+  width: auto;
+  background: none;
+  color: var(--accent);
+  padding: 6px 4px;
+  font-weight: 700;
+}
+
+/* Info-Button + Overlay */
+.info-btn {
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top));
+  right: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: #2a2f3a;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 800;
+  font-style: italic;
+  padding: 0;
+  z-index: 15;
+}
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 30;
+  overflow-y: auto;
+  padding: max(24px, env(safe-area-inset-top)) 20px
+    max(24px, env(safe-area-inset-bottom));
+}
+.overlay-inner {
+  max-width: 520px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}

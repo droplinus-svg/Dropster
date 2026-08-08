@@ -7,6 +7,8 @@ import {
   type NowPlaying,
 } from "../spotify/api";
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 function isDeviceError(m: string): boolean {
   const s = m.toLowerCase();
   return (
@@ -17,8 +19,6 @@ function isDeviceError(m: string): boolean {
   );
 }
 
-// Spielablauf OHNE Titel-Auslesen: Playlist als Kontext mit Zufall starten,
-// beim Loesen zuerst Titel/Interpret, dann per Klick das Jahr zeigen.
 export function Game({
   playlistId,
   playlistName,
@@ -33,27 +33,43 @@ export function Game({
   );
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [current, setCurrent] = useState<NowPlaying | null>(null);
+  const [played, setPlayed] = useState<Set<string>>(new Set());
   const [round, setRound] = useState(0);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
+  // Nach Start/Skip sicherstellen, dass ein noch nicht gespielter Song laeuft.
+  async function avoidRepeat(dev: string) {
+    for (let i = 0; i < 15; i++) {
+      await sleep(600);
+      const np = await getCurrentlyPlaying();
+      const id = np?.id;
+      if (!id) continue; // Song noch nicht geladen
+      if (!played.has(id)) {
+        setPlayed((p) => new Set(p).add(id));
+        return;
+      }
+      await skipNext(dev); // schon gespielt -> weiter
+    }
+  }
+
   async function playRound() {
     setMsg("");
-    setCurrent(null);
     setBusy(true);
     try {
-      if (!deviceId) {
-        const id = await startPlaylist(playlistId);
-        setDeviceId(id);
+      let dev = deviceId;
+      if (!dev) {
+        dev = await startPlaylist(playlistId);
+        setDeviceId(dev);
       } else {
-        await skipNext(deviceId);
+        await skipNext(dev);
       }
+      await avoidRepeat(dev);
       setRound((r) => r + 1);
       setPhase("playing");
     } catch (e) {
       const m = (e as Error).message;
       if (isDeviceError(m)) {
-        // Gerät verloren -> Initialisierung neu starten.
         setDeviceId(null);
         setPhase("idle");
         setMsg(
@@ -88,13 +104,10 @@ export function Game({
     }
   }
 
+  const deviceLost = isDeviceError(msg);
+
   return (
     <div className="stack">
-      <div className="panel stack">
-        <span className="badge">{playlistName}</span>
-        <span className="muted">Runde {round}</span>
-      </div>
-
       {phase === "idle" && (
         <button className="big-play" disabled={busy} onClick={playRound}>
           {busy ? "…" : "Song abspielen"}
@@ -102,22 +115,31 @@ export function Game({
       )}
 
       {phase === "playing" && (
-        <div className="panel stack">
-          <p className="muted" style={{ textAlign: "center" }}>
-            🎵 Ein Song läuft – aus welchem Jahr ist er?
+        <div className="playing-hero">
+          <div className="eq">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <p className="question">
+            Ein Song läuft 🎧
+            <br />
+            Aus welchem <span>Jahr</span> ist er?
           </p>
-          <button disabled={busy} onClick={reveal}>
+          <button className="big-solve" disabled={busy} onClick={reveal}>
             {busy ? "…" : "Lösen"}
           </button>
         </div>
       )}
 
       {(phase === "meta" || phase === "year") && current && (
-        <div className="panel stack">
-          <div className="reveal-meta">
-            <div className="reveal-title">{current.name}</div>
-            <div className="reveal-artist">{current.artists.join(", ")}</div>
-          </div>
+        <div className="reveal-card">
+          <div className="lbl">Titel</div>
+          <div className="reveal-title">{current.name}</div>
+          <div className="lbl">Interpret</div>
+          <div className="reveal-artist">{current.artists.join(", ")}</div>
 
           {phase === "meta" && (
             <button disabled={busy} onClick={() => setPhase("year")}>
@@ -127,6 +149,7 @@ export function Game({
 
           {phase === "year" && (
             <>
+              <div className="lbl">Erschienen</div>
               <div className="reveal-year">{current.year ?? "—"}</div>
               <span className="badge low">Jahr noch vorläufig aus Spotify</span>
               <button disabled={busy} onClick={playRound}>
@@ -138,9 +161,9 @@ export function Game({
       )}
 
       {msg && (
-        <div className="panel stack">
-          <p className="muted">{msg}</p>
-          {isDeviceError(msg) && (
+        <div className={deviceLost ? "alert stack" : "panel"}>
+          <p className={deviceLost ? "" : "muted"}>{msg}</p>
+          {deviceLost && (
             <button
               className="secondary"
               onClick={() => {
@@ -153,9 +176,16 @@ export function Game({
         </div>
       )}
 
-      <button className="secondary" onClick={onChangePlaylist}>
-        Andere Playlist
-      </button>
+      {!deviceLost && (
+        <div className="footer-meta">
+          <span>
+            {playlistName} · Runde {round}
+          </span>
+          <button className="linklike" onClick={onChangePlaylist}>
+            Andere Playlist
+          </button>
+        </div>
+      )}
     </div>
   );
 }
