@@ -1,17 +1,18 @@
 import { useState } from "react";
 import {
   getCurrentlyPlaying,
-  getPlaybackVolume,
-  setVolume,
+  playTrack,
   skipNext,
   startPlaylist,
   type NowPlaying,
 } from "../spotify/api";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-// TEST: leise weiterlaufen lassen (statt stumm/pausieren), um die Verbindung
-// zu halten. Wenn das hilft, koennen wir den Wert spaeter feinjustieren.
-const REVEAL_VOLUME = 10;
+
+// Langer, ruhiger Naturklang-Track ("8 Hours Nature Sounds"). Laeuft beim
+// Loesen weiter und haelt so die Verbindung, ohne den Song laut zu spielen.
+const AMBIENT_ID = "2pPUnYy8lP4Tn946sDJ4Pu";
+const AMBIENT_URI = `spotify:track:${AMBIENT_ID}`;
 
 function isDeviceError(m: string): boolean {
   const s = m.toLowerCase();
@@ -38,23 +39,22 @@ export function Game({
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [current, setCurrent] = useState<NowPlaying | null>(null);
   const [played, setPlayed] = useState<Set<string>>(new Set());
-  const [savedVol, setSavedVol] = useState<number | null>(null);
   const [round, setRound] = useState(0);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
-  // Nach Start/Skip sicherstellen, dass ein noch nicht gespielter Song laeuft.
+  // Nach dem Start sicherstellen, dass ein noch nicht gespielter Song laeuft.
   async function avoidRepeat(dev: string) {
     for (let i = 0; i < 15; i++) {
       await sleep(600);
       const np = await getCurrentlyPlaying();
       const id = np?.id;
-      if (!id) continue;
+      if (!id || id === AMBIENT_ID) continue; // noch nicht geladen / Ambient
       if (!played.has(id)) {
         setPlayed((p) => new Set(p).add(id));
         return;
       }
-      await skipNext(dev);
+      await skipNext(dev); // schon gespielt -> weiter
     }
   }
 
@@ -62,21 +62,10 @@ export function Game({
     setMsg("");
     setBusy(true);
     try {
-      let dev = deviceId;
-      if (!dev) {
-        dev = await startPlaylist(playlistId);
-        setDeviceId(dev);
-      } else {
-        await skipNext(dev);
-      }
-      // Lautstaerke wieder hoch (nach dem stummen "Loesen").
-      if (savedVol != null) {
-        try {
-          await setVolume(savedVol, dev);
-        } catch {
-          /* egal */
-        }
-      }
+      // Immer neu in den Playlist-Kontext (Zufall) – bringt uns auch aus dem
+      // Ambient-Track zurueck.
+      const dev = await startPlaylist(playlistId);
+      setDeviceId(dev);
       await avoidRepeat(dev);
       setRound((r) => r + 1);
       setPhase("playing");
@@ -109,18 +98,13 @@ export function Game({
       }
       setCurrent(np);
       setPhase("meta");
-      // Statt Pause: stummschalten – so bleibt die Spotify-App aktiv und die
-      // Verbindung reißt in der Ratephase nicht ab.
+      // Auf ruhige Naturklaenge wechseln: haelt die Verbindung, ohne den
+      // (bereits geratenen) Song laut weiterlaufen zu lassen.
       if (deviceId) {
         try {
-          const v = await getPlaybackVolume();
-          setSavedVol(v && v > 0 ? v : 70);
-          // TEST: leise weiterlaufen lassen statt stumm/pausieren.
-          await setVolume(REVEAL_VOLUME, deviceId);
+          await playTrack(AMBIENT_URI, deviceId);
         } catch {
-          setMsg(
-            "Hinweis (Test): Lautstärke ließ sich nicht senken – der Song läuft normal weiter."
-          );
+          /* Ambient nicht verfuegbar -> Song laeuft weiter, haelt auch */
         }
       }
     } catch (e) {
