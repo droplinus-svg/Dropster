@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   getCurrentlyPlaying,
   playTrack,
@@ -7,12 +7,13 @@ import {
   startPlaylist,
   type NowPlaying,
 } from "../spotify/api";
+import { burnSong, loadBlacklist } from "../lib/groups";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Fester Wunsch-Naturklang ("10 Minuten beruhigende Naturgeräusche", in DE
-// verfuegbar). Die Laufzeit-Suche dient nur noch als Notnagel.
-const AMBIENT_ID = "2kWBBq73ivyK84ff0xdawz";
+// Komplett stiller Track – laeuft beim Loesen lautlos weiter und haelt so die
+// Verbindung. Die Laufzeit-Suche (Naturklaenge) dient als Notnagel.
+const AMBIENT_ID = "6TzDoCIYCsmEOXbdRAbazF";
 const AMBIENT_URI = `spotify:track:${AMBIENT_ID}`;
 
 function isDeviceError(m: string): boolean {
@@ -28,10 +29,12 @@ function isDeviceError(m: string): boolean {
 export function Game({
   playlistId,
   playlistName,
+  spielrundeId,
   onChangePlaylist,
 }: {
   playlistId: string;
   playlistName: string;
+  spielrundeId: string | null;
   onChangePlaylist: () => void;
 }) {
   const [phase, setPhase] = useState<"idle" | "playing" | "meta" | "year">(
@@ -45,6 +48,19 @@ export function Game({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
+  // Dauerhafte Sperrliste der Spielrunde laden (gesperrte Songs = schon gespielt).
+  useEffect(() => {
+    if (!spielrundeId) return;
+    (async () => {
+      try {
+        const ids = await loadBlacklist(spielrundeId);
+        if (ids.length) setPlayed(new Set(ids));
+      } catch {
+        /* ohne Sperrliste weiterspielen */
+      }
+    })();
+  }, [spielrundeId]);
+
   // Nach dem Start sicherstellen, dass ein noch nicht gespielter Song laeuft.
   async function avoidRepeat(dev: string) {
     for (let i = 0; i < 15; i++) {
@@ -54,9 +70,15 @@ export function Game({
       if (!id || id === ambientId) continue; // noch nicht geladen / Ambient
       if (!played.has(id)) {
         setPlayed((p) => new Set(p).add(id));
+        // Song dauerhaft fuer die Spielrunde sperren.
+        if (spielrundeId) {
+          burnSong(spielrundeId, id, np.name, np.artists.join(", ")).catch(
+            () => {}
+          );
+        }
         return;
       }
-      await skipNext(dev); // schon gespielt -> weiter
+      await skipNext(dev); // schon gespielt / gesperrt -> weiter
     }
   }
 
@@ -131,8 +153,16 @@ export function Game({
     <div className="stack">
       <div className="game-stage">
         {phase === "idle" && (
-          <button className="big-play" disabled={busy} onClick={playRound}>
-            {busy ? "…" : "Song abspielen"}
+          <button className="start-tile" disabled={busy} onClick={playRound}>
+            <span className="start-tile-eq">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="start-tile-title">
+              {busy ? "…" : "Los geht’s"}
+            </span>
+            <span className="start-tile-sub">Ersten Song starten</span>
           </button>
         )}
 

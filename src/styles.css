@@ -176,6 +176,44 @@ select, input {
 .question span { color: var(--accent); }
 .big-solve { font-size: 22px; padding: 20px; border-radius: 20px; }
 
+.start-tile {
+  width: 100%;
+  padding: 44px 20px;
+  border-radius: 26px;
+  background: linear-gradient(160deg, #35d15f, #12833a);
+  color: #04180d;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 12px 34px rgba(29, 185, 84, 0.28);
+}
+.start-tile-title {
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+}
+.start-tile-sub {
+  font-size: 16px;
+  font-weight: 700;
+  color: rgba(4, 24, 13, 0.72);
+}
+.start-tile-eq {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  height: 52px;
+  margin-bottom: 6px;
+}
+.start-tile-eq i {
+  width: 12px;
+  background: #04180d;
+  border-radius: 6px;
+}
+.start-tile-eq i:nth-child(1) { height: 26px; }
+.start-tile-eq i:nth-child(2) { height: 48px; }
+.start-tile-eq i:nth-child(3) { height: 34px; }
+
 .reveal-card {
   background: var(--panel);
   border-radius: var(--radius);

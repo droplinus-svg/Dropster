@@ -1,8 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "../config";
 
-// Reiner Datenspeicher – die Nutzeridentitaet liefert Spotify OAuth,
-// daher keine Supabase-Auth. Wird erst ab dem Spiel-/Cache-Teil gebraucht.
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { persistSession: false },
-});
+// Reiner Datenspeicher (keine Supabase-Auth). Nur aktiv, wenn konfiguriert –
+// sonst laeuft das Spiel ohne dauerhafte Sperrliste weiter.
+export const supabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+
+export const supabase = supabaseConfigured
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false },
+    })
+  : null;
