@@ -250,7 +250,11 @@ export async function getPlaybackVolume(): Promise<number | null> {
 export async function searchAmbientUri(): Promise<string | null> {
   const data = await api<{
     tracks?: { items?: { uri?: string; is_playable?: boolean }[] };
-  }>(`/search?q=${encodeURIComponent("white noise")}&type=track&limit=10`);
+  }>(
+    `/search?q=${encodeURIComponent(
+      "beruhigende Naturgeräusche"
+    )}&type=track&limit=10`
+  );
   const items = data.tracks?.items ?? [];
   const ok = items.find((t) => t.uri && t.is_playable !== false) ?? items[0];
   return ok?.uri ?? null;

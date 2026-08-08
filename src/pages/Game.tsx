@@ -10,6 +10,11 @@ import {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Fester Wunsch-Naturklang ("10 Minuten beruhigende Naturgeräusche", in DE
+// verfuegbar). Die Laufzeit-Suche dient nur noch als Notnagel.
+const AMBIENT_ID = "2kWBBq73ivyK84ff0xdawz";
+const AMBIENT_URI = `spotify:track:${AMBIENT_ID}`;
+
 function isDeviceError(m: string): boolean {
   const s = m.toLowerCase();
   return (
@@ -99,13 +104,18 @@ export function Game({
       // (bereits geratenen) Song laut weiterlaufen zu lassen.
       if (deviceId) {
         try {
-          const uri = await searchAmbientUri();
-          if (uri) {
-            await playTrack(uri, deviceId);
-            setAmbientId(uri.split(":").pop() ?? null);
-          }
+          await playTrack(AMBIENT_URI, deviceId);
+          setAmbientId(AMBIENT_ID);
         } catch {
-          /* Ambient nicht verfuegbar -> Song laeuft weiter, haelt auch */
+          try {
+            const uri = await searchAmbientUri();
+            if (uri) {
+              await playTrack(uri, deviceId);
+              setAmbientId(uri.split(":").pop() ?? null);
+            }
+          } catch {
+            /* Ambient nicht verfuegbar -> Song laeuft weiter, haelt auch */
+          }
         }
       }
     } catch (e) {
