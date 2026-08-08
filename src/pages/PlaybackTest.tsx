@@ -3,7 +3,6 @@ import {
   getDevices,
   pausePlayback,
   playTrack,
-  transferPlayback,
   type SpotifyDevice,
 } from "../spotify/api";
 import { logout } from "../spotify/auth";
@@ -82,11 +81,12 @@ export function PlaybackTest({ onLoggedOut }: { onLoggedOut: () => void }) {
       <div className="panel stack">
         <div className="row">
           <button
-            disabled={busy || !deviceId}
+            disabled={busy}
             onClick={() =>
               guard(async () => {
-                await transferPlayback(deviceId);
-                await playTrack(TEST_TRACK_URI, deviceId);
+                // Kein device_id, keine Uebertragung: einfach dem aktiven
+                // Geraet (dem laufenden iPhone) sagen, diesen Song zu spielen.
+                await playTrack(TEST_TRACK_URI);
                 setMsg("▶️ Läuft – hörst du den Testsong?");
               })
             }
@@ -98,7 +98,7 @@ export function PlaybackTest({ onLoggedOut }: { onLoggedOut: () => void }) {
             disabled={busy}
             onClick={() =>
               guard(async () => {
-                await pausePlayback(deviceId || undefined);
+                await pausePlayback();
                 setMsg("⏸️ Pausiert.");
               })
             }
