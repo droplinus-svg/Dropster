@@ -1,0 +1,10 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+# SPA-Fallback: alle Routen auf index.html (fuer OAuth-Callback /callback etc.)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
