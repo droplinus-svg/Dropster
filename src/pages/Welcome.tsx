@@ -1,14 +1,24 @@
-// Willkommens-/Aufwach-Bildschirm: macht aus dem technischen "Weck-Schritt"
-// ein natuerliches Begruessungssong-Ritual.
+// Willkommens-/Aufwach-Bildschirm: gross und deutlich, damit das
+// Begruessungssong-Ritual wirklich verstanden wird.
 export function Welcome({ onReady }: { onReady: () => void }) {
   return (
     <div className="panel stack">
-      <strong>Bereit machen</strong>
+      <h2 className="howto-title">So geht’s los 🎶</h2>
+      <ol className="howto">
+        <li>
+          Öffne die <strong>Spotify-App</strong> auf diesem Handy.
+        </li>
+        <li>
+          Starte <strong>irgendeinen Song</strong> und lass ihn{" "}
+          <strong>laufen</strong> – nicht pausieren.
+        </li>
+        <li>
+          Komm hierher zurück und tippe <strong>„Los geht’s“</strong>.
+        </li>
+      </ol>
       <p className="muted">
-        Zum Aufwärmen läuft ein Begrüßungssong 🎶 Öffne kurz die Spotify-App,
-        starte irgendeinen Song und lass ihn spielen. Komm dann hierher zurück
-        und tippe „Los geht’s“. Das weckt Spotify, damit Dropster die Musik
-        steuern kann – danach läuft alles von selbst.
+        Das ist der Begrüßungssong – er weckt Spotify, damit Dropster die Musik
+        steuern kann. Danach läuft alles von selbst.
       </p>
       <button
         className="secondary"

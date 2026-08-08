@@ -7,8 +7,18 @@ import {
   type NowPlaying,
 } from "../spotify/api";
 
+function isDeviceError(m: string): boolean {
+  const s = m.toLowerCase();
+  return (
+    s.includes("gerät") ||
+    s.includes("device") ||
+    s.includes("eingeschlafen") ||
+    s.includes("no active")
+  );
+}
+
 // Spielablauf OHNE Titel-Auslesen: Playlist als Kontext mit Zufall starten,
-// beim Loesen "was laeuft gerade?" abfragen, fuer die naechste Runde "weiter".
+// beim Loesen zuerst Titel/Interpret, dann per Klick das Jahr zeigen.
 export function Game({
   playlistId,
   playlistName,
@@ -18,14 +28,15 @@ export function Game({
   playlistName: string;
   onChangePlaylist: () => void;
 }) {
-  const [phase, setPhase] = useState<"idle" | "playing" | "revealed">("idle");
+  const [phase, setPhase] = useState<"idle" | "playing" | "meta" | "year">(
+    "idle"
+  );
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [current, setCurrent] = useState<NowPlaying | null>(null);
   const [round, setRound] = useState(0);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
-  // Startet die erste Runde (Playlist-Kontext) oder springt zur naechsten.
   async function playRound() {
     setMsg("");
     setCurrent(null);
@@ -40,7 +51,17 @@ export function Game({
       setRound((r) => r + 1);
       setPhase("playing");
     } catch (e) {
-      setMsg((e as Error).message);
+      const m = (e as Error).message;
+      if (isDeviceError(m)) {
+        // Gerät verloren -> Initialisierung neu starten.
+        setDeviceId(null);
+        setPhase("idle");
+        setMsg(
+          "Spotify ist eingeschlafen 😴 Kurz die Stimmung heben: Öffne die Spotify-App, starte einen Song und lass ihn laufen – dann hier wieder „Song abspielen“. Wir starten neu."
+        );
+      } else {
+        setMsg(m);
+      }
     } finally {
       setBusy(false);
     }
@@ -58,8 +79,7 @@ export function Game({
         return;
       }
       setCurrent(np);
-      setPhase("revealed");
-      // Nach dem Auslesen anhalten.
+      setPhase("meta");
       await pausePlayback(deviceId ?? undefined);
     } catch (e) {
       setMsg((e as Error).message);
@@ -92,23 +112,44 @@ export function Game({
         </div>
       )}
 
-      {phase === "revealed" && current && (
+      {(phase === "meta" || phase === "year") && current && (
         <div className="panel stack">
-          <div className="reveal-year">{current.year ?? "—"}</div>
           <div className="reveal-meta">
             <div className="reveal-title">{current.name}</div>
             <div className="reveal-artist">{current.artists.join(", ")}</div>
           </div>
-          <span className="badge low">Jahr noch vorläufig aus Spotify</span>
-          <button disabled={busy} onClick={playRound}>
-            {busy ? "…" : "Nächste Runde"}
-          </button>
+
+          {phase === "meta" && (
+            <button disabled={busy} onClick={() => setPhase("year")}>
+              Jahr zeigen
+            </button>
+          )}
+
+          {phase === "year" && (
+            <>
+              <div className="reveal-year">{current.year ?? "—"}</div>
+              <span className="badge low">Jahr noch vorläufig aus Spotify</span>
+              <button disabled={busy} onClick={playRound}>
+                {busy ? "…" : "Nächste Runde"}
+              </button>
+            </>
+          )}
         </div>
       )}
 
       {msg && (
-        <div className="panel">
+        <div className="panel stack">
           <p className="muted">{msg}</p>
+          {isDeviceError(msg) && (
+            <button
+              className="secondary"
+              onClick={() => {
+                window.location.href = "spotify:";
+              }}
+            >
+              Spotify öffnen
+            </button>
+          )}
         </div>
       )}
 

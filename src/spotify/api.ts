@@ -175,7 +175,7 @@ export async function startPlaylist(playlistId: string): Promise<string> {
     devices[0];
   if (!target?.id) {
     throw new Error(
-      "Kein Spotify-Gerät gefunden. Starte in der Spotify-App auf dem iPhone kurz einen Song und lass ihn laufen."
+      "Spotify ist eingeschlafen. Öffne kurz die Spotify-App, starte einen Song, komm zurück und tipp erneut auf „Song abspielen“."
     );
   }
   try {
