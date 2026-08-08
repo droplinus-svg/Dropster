@@ -2,17 +2,13 @@ import { useState } from "react";
 import {
   getCurrentlyPlaying,
   playTrack,
+  searchAmbientUri,
   skipNext,
   startPlaylist,
   type NowPlaying,
 } from "../spotify/api";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// Langer, ruhiger Naturklang-Track ("8 Hours Nature Sounds"). Laeuft beim
-// Loesen weiter und haelt so die Verbindung, ohne den Song laut zu spielen.
-const AMBIENT_ID = "2pPUnYy8lP4Tn946sDJ4Pu";
-const AMBIENT_URI = `spotify:track:${AMBIENT_ID}`;
 
 function isDeviceError(m: string): boolean {
   const s = m.toLowerCase();
@@ -39,6 +35,7 @@ export function Game({
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [current, setCurrent] = useState<NowPlaying | null>(null);
   const [played, setPlayed] = useState<Set<string>>(new Set());
+  const [ambientId, setAmbientId] = useState<string | null>(null);
   const [round, setRound] = useState(0);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -49,7 +46,7 @@ export function Game({
       await sleep(600);
       const np = await getCurrentlyPlaying();
       const id = np?.id;
-      if (!id || id === AMBIENT_ID) continue; // noch nicht geladen / Ambient
+      if (!id || id === ambientId) continue; // noch nicht geladen / Ambient
       if (!played.has(id)) {
         setPlayed((p) => new Set(p).add(id));
         return;
@@ -102,7 +99,11 @@ export function Game({
       // (bereits geratenen) Song laut weiterlaufen zu lassen.
       if (deviceId) {
         try {
-          await playTrack(AMBIENT_URI, deviceId);
+          const uri = await searchAmbientUri();
+          if (uri) {
+            await playTrack(uri, deviceId);
+            setAmbientId(uri.split(":").pop() ?? null);
+          }
         } catch {
           /* Ambient nicht verfuegbar -> Song laeuft weiter, haelt auch */
         }
