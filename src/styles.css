@@ -314,13 +314,27 @@ select, input {
   flex: none;
   width: 54px;
   height: 54px;
-  border-radius: 16px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 27px;
-  background: linear-gradient(160deg, #35d15f, #12833a);
-  box-shadow: 0 8px 18px rgba(29, 185, 84, 0.4);
+  background: transparent;
+  box-shadow: 0 8px 20px rgba(29, 185, 84, 0.4);
+}
+.group-hero-icon .vinyl {
+  display: block;
+  border-radius: 50%;
+  animation: vinyl-spin 9s linear infinite;
+}
+@keyframes vinyl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .group-hero-icon .vinyl {
+    animation: none;
+  }
 }
 .group-hero-title {
   font-size: 22px;
@@ -359,6 +373,39 @@ select, input {
 }
 .group-dot { color: var(--muted); }
 .danger-link { color: var(--danger); }
+
+/* Ausklappbares Menue der bestehenden Gruppen */
+.accordion-head {
+  width: 100%;
+  background: none;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 2px;
+  font-weight: 800;
+  font-size: 16px;
+}
+.accordion-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(29, 185, 84, 0.14);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+.chev {
+  margin-left: auto;
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+.chev.up { transform: rotate(180deg); }
+.group-list {
+  margin-top: 4px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
 
 .logout-link {
   color: var(--muted);

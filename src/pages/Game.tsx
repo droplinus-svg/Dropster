@@ -265,18 +265,27 @@ export function Game({
 
   const deviceLost = isDeviceError(msg);
 
-  // Kennzeichnung, woher das angezeigte Jahr stammt.
-  const yearBadge: { text: string; cls: string } = !yearInfo
-    ? { text: "Jahr wird noch geprüft …", cls: "low" }
-    : yearInfo.source === "musicbrainz"
-    ? {
+  // Kennzeichnung, woher das angezeigte Jahr stammt (inkl. Grund bei Spotify).
+  function badgeFor(y: YearResult | null): { text: string; cls: string } {
+    if (!y) return { text: "Jahr wird noch geprüft …", cls: "low" };
+    if (y.source === "musicbrainz") {
+      return {
         text:
-          yearInfo.confidence === "high"
+          y.confidence === "high"
             ? "Erstveröffentlichung · MusicBrainz"
             : "Aufnahmejahr · MusicBrainz",
         cls: "ok",
-      }
-    : { text: "Jahr vorläufig aus Spotify", cls: "low" };
+      };
+    }
+    const why: Record<string, string> = {
+      no_isrc: "Aus Spotify · keine ISRC",
+      mb_notfound: "Aus Spotify · bei MusicBrainz nicht gefunden",
+      mb_error: "Aus Spotify · MusicBrainz-Fehler",
+      server_unreachable: "Aus Spotify · Server nicht erreicht",
+    };
+    return { text: why[y.reason] ?? "Jahr vorläufig aus Spotify", cls: "low" };
+  }
+  const yearBadge = badgeFor(yearInfo);
 
   return (
     <div className="stack">

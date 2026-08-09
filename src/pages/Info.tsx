@@ -64,10 +64,12 @@ export function Info({ onClose }: { onClose: () => void }) {
             <strong>Hitster-Marken</strong> aus dem normalen Spiel verwenden –
             oder euch selbst welche basteln (z. B. Chips oder Münzen). Mit einer
             Marke darf man <strong>intervenieren</strong>: Glaubst du, dass die
-            Person, die gerade dran ist, das Jahr <strong>falsch einsortiert</strong>{" "}
-            hat, gibst du eine Marke ab und legst den Zettel dorthin, wo er
-            deiner Meinung nach hingehört. Stimmt deine Position, gewinnst du –
-            liegst du daneben, ist die Marke weg.
+            Person, die gerade dran ist, das Jahr{" "}
+            <strong>falsch einsortiert</strong> hat, gibst du eine Marke ab und
+            legst <strong>die Marke selbst</strong> an die Stelle in der Reihe,
+            wo deiner Meinung nach das Jahr richtig läge – keinen Zettel, nur die
+            Marke. Stimmt deine Position, gewinnst du – liegst du daneben, ist
+            die Marke weg.
           </p>
         </div>
 

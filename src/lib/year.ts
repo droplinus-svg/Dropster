@@ -1,24 +1,31 @@
 import { supabase } from "./supabase";
 import type { TrackInfo } from "../spotify/api";
 
-export type YearSource =
-  | "musicbrainz"
-  | "spotify_fallback"
-  | "spotify";
+export type YearSource = "musicbrainz" | "spotify_fallback" | "spotify";
+
+// Warum stammt das Jahr aus dieser Quelle? (Fuer Anzeige + Diagnose.)
+export type YearReason =
+  | "mb_hit" // MusicBrainz-Treffer
+  | "no_isrc" // Track ohne ISRC -> MusicBrainz nicht befragbar
+  | "mb_notfound" // MusicBrainz kennt den Song nicht
+  | "mb_error" // MusicBrainz-Aufruf fehlgeschlagen
+  | "server_unreachable"; // Netlify-Funktion nicht erreichbar
 
 export interface YearResult {
   year: number | null;
   source: YearSource;
   confidence: "high" | "medium" | "low";
+  reason: YearReason;
 }
 
 // Erscheinungsjahr nach der Regel "Erstveroeffentlichung durch DIESEN
-// Interpreten" aufloesen. Reihenfolge: geteilter Cache -> MusicBrainz-Funktion
-// -> Spotify-Jahr als Notnagel.
+// Interpreten" aufloesen. Reihenfolge: geteilter Cache (nur echte
+// MusicBrainz-Treffer) -> MusicBrainz-Funktion -> Spotify-Jahr als Notnagel.
 export async function resolveYear(t: TrackInfo): Promise<YearResult> {
   const fallback = t.year ? parseInt(t.year, 10) : null;
 
-  // 1) Cache direkt lesen (spart die Funktion, sobald ein Song einmal geloest ist).
+  // 1) Cache direkt lesen – aber NUR echten MusicBrainz-Treffern vertrauen.
+  //    Ein alter Spotify-Fallback im Cache soll MusicBrainz nicht blockieren.
   if (supabase) {
     try {
       const { data } = await supabase
@@ -26,11 +33,16 @@ export async function resolveYear(t: TrackInfo): Promise<YearResult> {
         .select("resolved_year,source,confidence")
         .eq("track_id", t.id)
         .maybeSingle();
-      if (data && data.resolved_year != null) {
+      if (
+        data &&
+        data.resolved_year != null &&
+        data.source === "musicbrainz"
+      ) {
         return {
           year: data.resolved_year as number,
-          source: data.source as YearSource,
+          source: "musicbrainz",
           confidence: data.confidence as YearResult["confidence"],
+          reason: "mb_hit",
         };
       }
     } catch {
@@ -38,7 +50,7 @@ export async function resolveYear(t: TrackInfo): Promise<YearResult> {
     }
   }
 
-  // 2) Netlify-Funktion (MusicBrainz + Cache-Schreiben).
+  // 2) Netlify-Funktion (MusicBrainz + Cache-Schreiben nur bei Treffer).
   try {
     const res = await fetch("/.netlify/functions/year", {
       method: "POST",
@@ -57,12 +69,23 @@ export async function resolveYear(t: TrackInfo): Promise<YearResult> {
         year: j.year ?? fallback,
         source: (j.source as YearSource) ?? "spotify",
         confidence: j.confidence ?? "low",
+        reason: (j.reason as YearReason) ?? "mb_error",
       };
     }
+    // Funktion antwortet, aber mit Fehlerstatus (z. B. 500).
+    return {
+      year: fallback,
+      source: "spotify",
+      confidence: "low",
+      reason: "mb_error",
+    };
   } catch {
-    /* offline oder lokal ohne Functions */
+    // Funktion gar nicht erreichbar (lokal/offline/404).
+    return {
+      year: fallback,
+      source: "spotify",
+      confidence: "low",
+      reason: t.isrc ? "server_unreachable" : "no_isrc",
+    };
   }
-
-  // 3) Notnagel: vorlaeufiges Spotify-Jahr.
-  return { year: fallback, source: "spotify", confidence: "low" };
 }

@@ -107,44 +107,56 @@ export async function handler(event: { body: string | null }) {
     const t = JSON.parse(event.body ?? "{}") as Partial<InTrack>;
     if (!t.trackId) return { statusCode: 400, body: "trackId erwartet" };
 
-    // 1) Cache?
+    // 1) Cache? – aber NUR echten MusicBrainz-Treffern vertrauen. Alte
+    //    Spotify-Fallbacks duerfen einen erneuten MusicBrainz-Versuch nicht
+    //    blockieren.
     if (supabase) {
       const { data: hit } = await supabase
         .from("year_cache")
         .select("resolved_year,source,confidence")
         .eq("track_id", t.trackId)
         .maybeSingle();
-      if (hit && hit.resolved_year != null) {
+      if (hit && hit.resolved_year != null && hit.source === "musicbrainz") {
         return json({
           year: hit.resolved_year,
           source: hit.source,
           confidence: hit.confidence,
+          reason: "mb_hit",
           cached: true,
         });
       }
     }
 
-    // 2) MusicBrainz (nur mit ISRC moeglich).
-    let resolved: Resolved | null = null;
-    if (t.isrc) {
-      try {
-        resolved = await resolveByIsrc(t.isrc);
-      } catch {
-        resolved = null;
-      }
-    }
-
-    // 3) Fallback: Spotify-Albumjahr (unsicher).
-    if (!resolved || resolved.year == null) {
-      resolved = {
+    // 2) Ohne ISRC ist MusicBrainz nicht befragbar.
+    if (!t.isrc) {
+      return json({
         year: t.fallbackYear ?? null,
         source: "spotify_fallback",
         confidence: "low",
-        artistMbid: resolved?.artistMbid ?? null,
-      };
+        reason: "no_isrc",
+      });
     }
 
-    // 4) In den Cache schreiben (Best effort).
+    // 3) MusicBrainz befragen.
+    let resolved: Resolved | null = null;
+    let mbError = false;
+    try {
+      resolved = await resolveByIsrc(t.isrc);
+    } catch {
+      mbError = true;
+    }
+
+    // 3a) Kein Treffer -> Spotify-Fallback, aber NICHT cachen (wiederholbar).
+    if (!resolved || resolved.year == null) {
+      return json({
+        year: t.fallbackYear ?? null,
+        source: "spotify_fallback",
+        confidence: "low",
+        reason: mbError ? "mb_error" : "mb_notfound",
+      });
+    }
+
+    // 3b) Echter MusicBrainz-Treffer -> dauerhaft cachen.
     if (supabase) {
       await supabase.from("year_cache").upsert({
         track_id: t.trackId,
@@ -163,6 +175,7 @@ export async function handler(event: { body: string | null }) {
       year: resolved.year,
       source: resolved.source,
       confidence: resolved.confidence,
+      reason: "mb_hit",
       cached: false,
     });
   } catch (e) {
