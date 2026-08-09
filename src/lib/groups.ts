@@ -50,6 +50,17 @@ export async function resetSpielrunde(spielrundeId: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+// Eine Spielgruppe ganz loeschen (inkl. ihrer Sperrliste – burned_song
+// haengt per ON DELETE CASCADE dran).
+export async function deleteSpielrunde(spielrundeId: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from("spielrunde")
+    .delete()
+    .eq("id", spielrundeId);
+  if (error) throw new Error(error.message);
+}
+
 // Einen gespielten Song fuer die Spielrunde sperren.
 export async function burnSong(
   spielrundeId: string,

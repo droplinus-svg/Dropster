@@ -268,6 +268,7 @@ export interface TrackInfo {
   title: string;
   artist: string;
   year: string | null;
+  isrc: string | null;
 }
 
 interface RawQueueTrack {
@@ -277,6 +278,7 @@ interface RawQueueTrack {
   type?: string;
   artists?: { name: string }[];
   album?: { release_date?: string };
+  external_ids?: { isrc?: string };
 }
 
 function toTrackInfo(t: RawQueueTrack | null | undefined): TrackInfo | null {
@@ -286,7 +288,10 @@ function toTrackInfo(t: RawQueueTrack | null | undefined): TrackInfo | null {
     uri: t.uri,
     title: t.name ?? "",
     artist: (t.artists ?? []).map((a) => a.name).join(", "),
-    year: t.album?.release_date ? String(t.album.release_date).slice(0, 4) : null,
+    year: t.album?.release_date
+      ? String(t.album.release_date).slice(0, 4)
+      : null,
+    isrc: t.external_ids?.isrc ?? null,
   };
 }
 

@@ -13,6 +13,7 @@ import {
 import { supabaseConfigured } from "../lib/supabase";
 import { burnSong, loadBlacklist } from "../lib/groups";
 import { loadKnownTracks, recordTracks } from "../lib/tracks";
+import { resolveYear, type YearResult } from "../lib/year";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -48,6 +49,7 @@ export function Game({
   );
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [current, setCurrent] = useState<TrackInfo | null>(null);
+  const [yearInfo, setYearInfo] = useState<YearResult | null>(null);
   const [played, setPlayed] = useState<Set<string>>(new Set());
   const [round, setRound] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -115,6 +117,12 @@ export function Game({
     if (supabaseConfigured && info.uri) {
       recordTracks(playlistId, [info]).catch(() => {});
     }
+    // Jahr im Hintergrund waehrend des Abspielens aufloesen, damit es beim
+    // "Loesen" schon feststeht (MusicBrainz, danach aus dem Cache sofort).
+    setYearInfo(null);
+    resolveYear(info)
+      .then((r) => setYearInfo(r))
+      .catch(() => {});
     setRound((r) => r + 1);
     setPhase("playing");
   }
@@ -134,6 +142,7 @@ export function Game({
           title: np!.name,
           artist: np!.artists.join(", "),
           year: np!.year,
+          isrc: np!.isrc,
         });
         return true;
       }
@@ -188,6 +197,7 @@ export function Game({
             title: np.name,
             artist: np.artists.join(", "),
             year: np.year,
+            isrc: np.isrc,
           });
           return;
         }
@@ -255,9 +265,36 @@ export function Game({
 
   const deviceLost = isDeviceError(msg);
 
+  // Kennzeichnung, woher das angezeigte Jahr stammt.
+  const yearBadge: { text: string; cls: string } = !yearInfo
+    ? { text: "Jahr wird noch geprüft …", cls: "low" }
+    : yearInfo.source === "musicbrainz"
+    ? {
+        text:
+          yearInfo.confidence === "high"
+            ? "Erstveröffentlichung · MusicBrainz"
+            : "Aufnahmejahr · MusicBrainz",
+        cls: "ok",
+      }
+    : { text: "Jahr vorläufig aus Spotify", cls: "low" };
+
   return (
     <div className="stack">
-      <div className="game-stage">
+      {deviceLost && (
+        <div className="alert stack">
+          <button
+            className="secondary"
+            onClick={() => {
+              window.location.href = "spotify:";
+            }}
+          >
+            Spotify öffnen
+          </button>
+          <p>{msg}</p>
+        </div>
+      )}
+
+      <div className={"game-stage" + (deviceLost ? " compact" : "")}>
         {phase === "idle" && (
           <button className="start-tile" disabled={busy} onClick={playRound}>
             <span className="start-tile-eq">
@@ -301,13 +338,15 @@ export function Game({
 
             <div className="lbl">Erschienen</div>
             <div className="reveal-year">
-              {phase === "year" ? current.year ?? "—" : "?"}
+              {phase === "year"
+                ? (yearInfo?.year ?? current.year ?? "—")
+                : "?"}
             </div>
             <span
-              className="badge low"
+              className={"badge " + yearBadge.cls}
               style={{ visibility: phase === "year" ? "visible" : "hidden" }}
             >
-              Jahr noch vorläufig aus Spotify
+              {yearBadge.text}
             </span>
 
             {phase === "meta" ? (
@@ -323,19 +362,9 @@ export function Game({
         )}
       </div>
 
-      {msg && (
-        <div className={deviceLost ? "alert stack" : "panel"}>
-          <p className={deviceLost ? "" : "muted"}>{msg}</p>
-          {deviceLost && (
-            <button
-              className="secondary"
-              onClick={() => {
-                window.location.href = "spotify:";
-              }}
-            >
-              Spotify öffnen
-            </button>
-          )}
+      {msg && !deviceLost && (
+        <div className="panel">
+          <p className="muted">{msg}</p>
         </div>
       )}
 

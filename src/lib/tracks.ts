@@ -8,7 +8,7 @@ export async function loadKnownTracks(
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("playlist_track")
-    .select("track_id,uri,title,artist,year")
+    .select("track_id,uri,title,artist,year,isrc")
     .eq("playlist_id", playlistId);
   if (error) throw new Error(error.message);
   return (data ?? []).map(
@@ -18,12 +18,14 @@ export async function loadKnownTracks(
       title: string | null;
       artist: string | null;
       year: string | null;
+      isrc: string | null;
     }) => ({
       id: r.track_id,
       uri: r.uri,
       title: r.title ?? "",
       artist: r.artist ?? "",
       year: r.year,
+      isrc: r.isrc ?? null,
     })
   );
 }
@@ -41,6 +43,7 @@ export async function recordTracks(
     title: t.title,
     artist: t.artist,
     year: t.year,
+    isrc: t.isrc,
   }));
   await supabase
     .from("playlist_track")

@@ -102,7 +102,7 @@ select, input {
 }
 .reveal-meta { text-align: center; }
 .reveal-title { font-size: 20px; font-weight: 700; }
-.reveal-artist { color: var(--muted); }
+.reveal-artist { color: var(--text); }
 
 .howto-title {
   margin: 0;
@@ -129,6 +129,7 @@ select, input {
   color: var(--muted);
 }
 .badge.low { background: #3a2a2a; color: #e0a0a0; }
+.badge.ok { background: #1f3324; color: #8fd18f; }
 
 /* Spielablauf */
 .game-stage {
@@ -138,6 +139,9 @@ select, input {
   justify-content: center;
   gap: 18px;
 }
+/* Wenn Spotify entkoppelt ist: Buehne schrumpfen, damit der rote Kasten mit
+   dem „Spotify öffnen“-Button ganz oben ohne Scrollen erreichbar bleibt. */
+.game-stage.compact { min-height: auto; }
 .playing-hero {
   display: flex;
   flex-direction: column;
@@ -232,7 +236,11 @@ select, input {
   margin-top: 14px;
 }
 .reveal-card .reveal-title { font-size: 26px; }
-.reveal-card .reveal-artist { font-size: 18px; }
+.reveal-card .reveal-artist {
+  font-size: 23px;
+  font-weight: 600;
+  color: var(--text);
+}
 .reveal-card .reveal-year { font-size: 88px; margin: 4px 0; }
 .reveal-card button { margin-top: 20px; width: 100%; }
 
@@ -283,6 +291,74 @@ select, input {
   gap: 8px;
 }
 .group-name { flex: 1; }
+
+/* Attraktiver Spielgruppe-Kasten */
+.group-hero {
+  background: radial-gradient(
+      120% 90% at 0% 0%,
+      rgba(29, 185, 84, 0.18),
+      transparent 60%
+    ),
+    linear-gradient(160deg, #1a2b21, #14171d 70%);
+  border: 1px solid #26402f;
+  border-radius: 22px;
+  padding: 22px;
+  box-shadow: 0 14px 34px rgba(29, 185, 84, 0.14);
+}
+.group-hero-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.group-hero-icon {
+  flex: none;
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 27px;
+  background: linear-gradient(160deg, #35d15f, #12833a);
+  box-shadow: 0 8px 18px rgba(29, 185, 84, 0.4);
+}
+.group-hero-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+.group-hero-sub {
+  font-size: 14px;
+  color: var(--muted);
+}
+.group-hero-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #c7d0dc;
+  margin: 2px 0 2px;
+}
+.group-hero-text strong { color: var(--accent); }
+
+/* Bestehende Gruppen: Aktionen je Zeile */
+.group-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #23262d;
+}
+.group-block:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.group-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 4px;
+}
+.group-dot { color: var(--muted); }
+.danger-link { color: var(--danger); }
 
 .logout-link {
   color: var(--muted);

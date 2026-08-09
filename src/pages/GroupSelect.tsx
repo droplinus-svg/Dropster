@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import { supabaseConfigured } from "../lib/supabase";
 import {
   createSpielrunde,
+  deleteSpielrunde,
   listSpielrunden,
   resetSpielrunde,
   type Spielrunde,
 } from "../lib/groups";
 
-// Spielrunde waehlen: neue Gruppe anlegen, bestehende fortsetzen (oder deren
-// Sperrliste zuruecksetzen), oder ohne dauerhafte Sperrliste spielen (null).
+// Spielrunde waehlen: neue Gruppe anlegen, bestehende fortsetzen (deren
+// Sperrliste zuruecksetzen oder die Gruppe loeschen), oder ohne dauerhafte
+// Sperrliste spielen (null).
 export function GroupSelect({
   onPick,
   onLogout,
@@ -22,6 +24,7 @@ export function GroupSelect({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [confirmReset, setConfirmReset] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -64,17 +67,40 @@ export function GroupSelect({
     }
   }
 
+  async function doDelete(id: string) {
+    setBusy(true);
+    setMsg("");
+    try {
+      await deleteSpielrunde(id);
+      setRunden((rs) => rs.filter((r) => r.id !== id));
+      setMsg("Gruppe gelöscht.");
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setConfirmDelete(null);
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="stack">
-      <div className="panel stack">
-        <strong>Spielgruppe</strong>
-        <p className="muted">
-          Gib der Gruppe einen Namen. Songs, die ihr spielt, werden für diese
+      <div className="group-hero stack">
+        <div className="group-hero-top">
+          <span className="group-hero-icon" aria-hidden="true">
+            🎉
+          </span>
+          <div>
+            <div className="group-hero-title">Spielgruppe</div>
+            <div className="group-hero-sub">Wer spielt heute mit?</div>
+          </div>
+        </div>
+        <p className="group-hero-text">
+          Gib der Gruppe einen Namen. Songs, die ihr spielt, bleiben für diese
           Gruppe <strong>dauerhaft gesperrt</strong> und kommen später nicht
           wieder.
         </p>
         {!supabaseConfigured && (
-          <p className="muted">
+          <p className="group-hero-text">
             Hinweis: Ohne Datenbank merkt sich Dropster die Sperrliste nur,
             solange die App offen ist.
           </p>
@@ -89,19 +115,21 @@ export function GroupSelect({
         </button>
       </div>
 
-      {loading && <p className="muted">Lade Runden …</p>}
+      {loading && <p className="muted">Lade Gruppen …</p>}
 
       {runden.length > 0 && (
         <div className="panel stack">
           <strong>Bestehende Gruppe fortsetzen</strong>
           {runden.map((r) => (
-            <div key={r.id} className="group-row">
-              <button
-                className="secondary group-name"
-                onClick={() => onPick(r)}
-              >
-                {r.name}
-              </button>
+            <div key={r.id} className="group-block">
+              <div className="group-row">
+                <button
+                  className="secondary group-name"
+                  onClick={() => onPick(r)}
+                >
+                  {r.name}
+                </button>
+              </div>
               {confirmReset === r.id ? (
                 <span className="group-confirm">
                   <span className="muted">Sperrliste löschen?</span>
@@ -119,13 +147,45 @@ export function GroupSelect({
                     Nein
                   </button>
                 </span>
+              ) : confirmDelete === r.id ? (
+                <span className="group-confirm">
+                  <span className="muted">Gruppe wirklich löschen?</span>
+                  <button
+                    className="linklike danger-link"
+                    disabled={busy}
+                    onClick={() => doDelete(r.id)}
+                  >
+                    Ja, löschen
+                  </button>
+                  <button
+                    className="linklike"
+                    onClick={() => setConfirmDelete(null)}
+                  >
+                    Nein
+                  </button>
+                </span>
               ) : (
-                <button
-                  className="linklike"
-                  onClick={() => setConfirmReset(r.id)}
-                >
-                  zurücksetzen
-                </button>
+                <span className="group-actions">
+                  <button
+                    className="linklike"
+                    onClick={() => {
+                      setConfirmDelete(null);
+                      setConfirmReset(r.id);
+                    }}
+                  >
+                    zurücksetzen
+                  </button>
+                  <span className="group-dot">·</span>
+                  <button
+                    className="linklike danger-link"
+                    onClick={() => {
+                      setConfirmReset(null);
+                      setConfirmDelete(r.id);
+                    }}
+                  >
+                    löschen
+                  </button>
+                </span>
               )}
             </div>
           ))}
