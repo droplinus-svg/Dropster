@@ -110,6 +110,7 @@ export function App() {
           playlistName={playlistName}
           spielrundeId={spielrunde?.id ?? null}
           onChangePlaylist={() => setScreen("playlists")}
+          onEnd={() => setScreen("groups")}
         />
       )}
     </div>

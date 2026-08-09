@@ -261,6 +261,7 @@ select, input {
   padding: 6px 4px;
   font-weight: 700;
 }
+.footer-actions { display: flex; gap: 4px; }
 
 /* Info-Button + Overlay */
 .info-btn {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   getCurrentlyPlaying,
+  pausePlayback,
   playTrack,
   searchAmbientUri,
   skipNext,
@@ -13,7 +14,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Komplett stiller Track – laeuft beim Loesen lautlos weiter und haelt so die
 // Verbindung. Die Laufzeit-Suche (Naturklaenge) dient als Notnagel.
-const AMBIENT_ID = "6TzDoCIYCsmEOXbdRAbazF";
+const AMBIENT_ID = "3ccQUpgvYqmgblII6yzyDM";
 const AMBIENT_URI = `spotify:track:${AMBIENT_ID}`;
 
 function isDeviceError(m: string): boolean {
@@ -31,11 +32,13 @@ export function Game({
   playlistName,
   spielrundeId,
   onChangePlaylist,
+  onEnd,
 }: {
   playlistId: string;
   playlistName: string;
   spielrundeId: string | null;
   onChangePlaylist: () => void;
+  onEnd: () => void;
 }) {
   const [phase, setPhase] = useState<"idle" | "playing" | "meta" | "year">(
     "idle"
@@ -147,6 +150,15 @@ export function Game({
     }
   }
 
+  async function endGame() {
+    try {
+      if (deviceId) await pausePlayback(deviceId);
+    } catch {
+      /* egal */
+    }
+    onEnd();
+  }
+
   const deviceLost = isDeviceError(msg);
 
   return (
@@ -236,9 +248,14 @@ export function Game({
           <span>
             {playlistName} · Runde {round}
           </span>
-          <button className="linklike" onClick={onChangePlaylist}>
-            Andere Playlist
-          </button>
+          <span className="footer-actions">
+            <button className="linklike" onClick={onChangePlaylist}>
+              Andere Playlist
+            </button>
+            <button className="linklike" onClick={endGame}>
+              Beenden
+            </button>
+          </span>
         </div>
       )}
     </div>
