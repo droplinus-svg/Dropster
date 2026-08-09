@@ -67,10 +67,10 @@ export function GroupSelect({
   return (
     <div className="stack">
       <div className="panel stack">
-        <strong>Spielrunde</strong>
+        <strong>Spielgruppe</strong>
         <p className="muted">
           Gib der Gruppe einen Namen. Songs, die ihr spielt, werden für diese
-          Runde <strong>dauerhaft gesperrt</strong> und kommen später nicht
+          Gruppe <strong>dauerhaft gesperrt</strong> und kommen später nicht
           wieder.
         </p>
         {!supabaseConfigured && (
@@ -85,7 +85,7 @@ export function GroupSelect({
           onChange={(e) => setName(e.target.value)}
         />
         <button disabled={busy || !name.trim()} onClick={create}>
-          Neue Runde starten
+          Neue Gruppe starten
         </button>
       </div>
 
@@ -93,7 +93,7 @@ export function GroupSelect({
 
       {runden.length > 0 && (
         <div className="panel stack">
-          <strong>Bestehende Runde fortsetzen</strong>
+          <strong>Bestehende Gruppe fortsetzen</strong>
           {runden.map((r) => (
             <div key={r.id} className="group-row">
               <button

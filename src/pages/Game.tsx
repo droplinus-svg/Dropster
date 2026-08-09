@@ -1,19 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   getCurrentlyPlaying,
+  getQueue,
   pausePlayback,
   playTrack,
+  playTrackInContext,
   searchAmbientUri,
   skipNext,
   startPlaylist,
-  type NowPlaying,
+  type TrackInfo,
 } from "../spotify/api";
+import { supabaseConfigured } from "../lib/supabase";
 import { burnSong, loadBlacklist } from "../lib/groups";
+import { loadKnownTracks, recordTracks } from "../lib/tracks";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Komplett stiller Track – laeuft beim Loesen lautlos weiter und haelt so die
-// Verbindung. Die Laufzeit-Suche (Naturklaenge) dient als Notnagel.
+// Stiller Pausen-Track (haelt beim Loesen die Verbindung). Suche als Notnagel.
 const AMBIENT_ID = "3ccQUpgvYqmgblII6yzyDM";
 const AMBIENT_URI = `spotify:track:${AMBIENT_ID}`;
 
@@ -44,58 +47,147 @@ export function Game({
     "idle"
   );
   const [deviceId, setDeviceId] = useState<string | null>(null);
-  const [current, setCurrent] = useState<NowPlaying | null>(null);
+  const [current, setCurrent] = useState<TrackInfo | null>(null);
   const [played, setPlayed] = useState<Set<string>>(new Set());
-  const [ambientId, setAmbientId] = useState<string | null>(null);
   const [round, setRound] = useState(0);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
-  // Dauerhafte Sperrliste der Spielrunde laden (gesperrte Songs = schon gespielt).
+  // Bekannte Titel der Playlist (ueber die Warteschlange angelernt).
+  const knownRef = useRef<Map<string, TrackInfo>>(new Map());
+
   useEffect(() => {
-    if (!spielrundeId) return;
     (async () => {
+      if (spielrundeId) {
+        try {
+          const ids = await loadBlacklist(spielrundeId);
+          if (ids.length) setPlayed(new Set(ids));
+        } catch {
+          /* ohne Sperrliste weiter */
+        }
+      }
       try {
-        const ids = await loadBlacklist(spielrundeId);
-        if (ids.length) setPlayed(new Set(ids));
+        const kt = await loadKnownTracks(playlistId);
+        kt.forEach((t) => knownRef.current.set(t.id, t));
       } catch {
-        /* ohne Sperrliste weiterspielen */
+        /* ohne Vorwissen weiter */
       }
     })();
-  }, [spielrundeId]);
+  }, [spielrundeId, playlistId]);
 
-  // Nach dem Start sicherstellen, dass ein noch nicht gespielter Song laeuft.
-  async function avoidRepeat(dev: string) {
-    for (let i = 0; i < 15; i++) {
-      await sleep(600);
+  // Warteschlange lesen und neue Titel merken (spielt nichts ab).
+  async function learnFromQueue(): Promise<{ current: TrackInfo | null }> {
+    try {
+      const q = await getQueue();
+      const fresh: TrackInfo[] = [];
+      const add = (t: TrackInfo | null) => {
+        if (!t || t.id === AMBIENT_ID) return;
+        if (!knownRef.current.has(t.id)) {
+          knownRef.current.set(t.id, t);
+          fresh.push(t);
+        }
+      };
+      add(q.current);
+      q.upcoming.forEach(add);
+      if (fresh.length && supabaseConfigured) {
+        recordTracks(playlistId, fresh).catch(() => {});
+      }
+      return { current: q.current };
+    } catch {
+      return { current: null }; // Warteschlange nicht verfuegbar
+    }
+  }
+
+  // Einen bekannten, noch nicht gesperrten Titel zufaellig waehlen.
+  function pickCandidate(): TrackInfo | null {
+    const cands: TrackInfo[] = [];
+    knownRef.current.forEach((t) => {
+      if (t.id !== AMBIENT_ID && !played.has(t.id)) cands.push(t);
+    });
+    if (!cands.length) return null;
+    return cands[Math.floor(Math.random() * cands.length)];
+  }
+
+  function lockRound(info: TrackInfo) {
+    setCurrent(info);
+    setPlayed((p) => new Set(p).add(info.id));
+    if (spielrundeId) {
+      burnSong(spielrundeId, info.id, info.title, info.artist).catch(() => {});
+    }
+    if (supabaseConfigured && info.uri) {
+      recordTracks(playlistId, [info]).catch(() => {});
+    }
+    setRound((r) => r + 1);
+    setPhase("playing");
+    learnFromQueue().catch(() => {}); // im Hintergrund weiterlernen
+  }
+
+  // Notnagel: alte Methode – zufaellig starten und gesperrte Songs ueberspringen.
+  async function skipFallback(dev: string): Promise<boolean> {
+    let lastSkipped: string | null = null;
+    for (let i = 0; i < 25; i++) {
+      await sleep(350);
       const np = await getCurrentlyPlaying();
       const id = np?.id;
-      if (!id || id === ambientId) continue; // noch nicht geladen / Ambient
+      if (!id || id === AMBIENT_ID || id === lastSkipped) continue;
       if (!played.has(id)) {
-        setPlayed((p) => new Set(p).add(id));
-        // Song dauerhaft fuer die Spielrunde sperren.
-        if (spielrundeId) {
-          burnSong(spielrundeId, id, np.name, np.artists.join(", ")).catch(
-            () => {}
-          );
-        }
-        return;
+        lockRound({
+          id,
+          uri: "",
+          title: np!.name,
+          artist: np!.artists.join(", "),
+          year: np!.year,
+        });
+        return true;
       }
-      await skipNext(dev); // schon gespielt / gesperrt -> weiter
+      lastSkipped = id;
+      await skipNext(dev);
     }
+    return false;
   }
 
   async function playRound() {
     setMsg("");
     setBusy(true);
     try {
-      // Immer neu in den Playlist-Kontext (Zufall) – bringt uns auch aus dem
-      // Ambient-Track zurueck.
-      const dev = await startPlaylist(playlistId);
-      setDeviceId(dev);
-      await avoidRepeat(dev);
-      setRound((r) => r + 1);
-      setPhase("playing");
+      let dev = deviceId;
+
+      // Erststart: Kontext anspielen (kurzer Anlern-Moment) und Queue lesen.
+      if (!dev) {
+        dev = await startPlaylist(playlistId);
+        setDeviceId(dev);
+        const boot = await learnFromQueue();
+        if (boot.current && !played.has(boot.current.id)) {
+          lockRound(boot.current); // Anlern-Song ist frei -> direkt nehmen
+          return;
+        }
+      }
+
+      // Bekannten freien Titel gezielt spielen (kein Ueberspringen).
+      let cand = pickCandidate();
+
+      // Nichts Freies bekannt? -> Kontext anspielen, dazulernen, nochmal.
+      if (!cand) {
+        await startPlaylist(playlistId);
+        const boot = await learnFromQueue();
+        if (boot.current && !played.has(boot.current.id)) {
+          lockRound(boot.current);
+          return;
+        }
+        cand = pickCandidate();
+      }
+
+      if (cand) {
+        await playTrackInContext(playlistId, cand.uri, dev);
+        lockRound(cand);
+        return;
+      }
+
+      // Letzter Notnagel: alte Skip-Methode.
+      if (!(await skipFallback(dev))) {
+        setMsg("Alle Songs dieser Playlist wurden gespielt. 🎉");
+        setPhase("idle");
+      }
     } catch (e) {
       const m = (e as Error).message;
       if (isDeviceError(m)) {
@@ -116,35 +208,20 @@ export function Game({
     setBusy(true);
     setMsg("");
     try {
-      const np = await getCurrentlyPlaying();
-      if (!np) {
-        setMsg(
-          "Konnte den laufenden Song nicht lesen. Läuft in Spotify gerade wirklich etwas?"
-        );
-        return;
-      }
-      setCurrent(np);
       setPhase("meta");
-      // Auf ruhige Naturklaenge wechseln: haelt die Verbindung, ohne den
-      // (bereits geratenen) Song laut weiterlaufen zu lassen.
+      // Stiller Track: haelt die Verbindung waehrend der Ratepause.
       if (deviceId) {
         try {
           await playTrack(AMBIENT_URI, deviceId);
-          setAmbientId(AMBIENT_ID);
         } catch {
           try {
             const uri = await searchAmbientUri();
-            if (uri) {
-              await playTrack(uri, deviceId);
-              setAmbientId(uri.split(":").pop() ?? null);
-            }
+            if (uri) await playTrack(uri, deviceId);
           } catch {
-            /* Ambient nicht verfuegbar -> Song laeuft weiter, haelt auch */
+            /* Song laeuft weiter */
           }
         }
       }
-    } catch (e) {
-      setMsg((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -201,9 +278,9 @@ export function Game({
         {(phase === "meta" || phase === "year") && current && (
           <div className="reveal-card">
             <div className="lbl">Titel</div>
-            <div className="reveal-title">{current.name}</div>
+            <div className="reveal-title">{current.title}</div>
             <div className="lbl">Interpret</div>
-            <div className="reveal-artist">{current.artists.join(", ")}</div>
+            <div className="reveal-artist">{current.artist}</div>
 
             {phase === "meta" && (
               <button disabled={busy} onClick={() => setPhase("year")}>
@@ -245,6 +322,9 @@ export function Game({
 
       {!deviceLost && (
         <>
+          <button className="end-btn" onClick={endGame}>
+            <span aria-hidden="true">⏹</span> Spiel beenden
+          </button>
           <div className="footer-meta">
             <span>
               {playlistName} · Runde {round}
@@ -253,9 +333,6 @@ export function Game({
               Andere Playlist
             </button>
           </div>
-          <button className="end-btn" onClick={endGame}>
-            <span aria-hidden="true">⏹</span> Spiel beenden
-          </button>
         </>
       )}
     </div>

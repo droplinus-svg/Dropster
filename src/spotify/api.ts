@@ -260,6 +260,67 @@ export async function searchAmbientUri(): Promise<string | null> {
   return ok?.uri ?? null;
 }
 
+// ---------- Warteschlange: Titel vorab lernen, ohne sie abzuspielen ----------
+
+export interface TrackInfo {
+  id: string;
+  uri: string;
+  title: string;
+  artist: string;
+  year: string | null;
+}
+
+interface RawQueueTrack {
+  id?: string;
+  uri?: string;
+  name?: string;
+  type?: string;
+  artists?: { name: string }[];
+  album?: { release_date?: string };
+}
+
+function toTrackInfo(t: RawQueueTrack | null | undefined): TrackInfo | null {
+  if (!t || !t.id || !t.uri || !t.uri.startsWith("spotify:track:")) return null;
+  return {
+    id: t.id,
+    uri: t.uri,
+    title: t.name ?? "",
+    artist: (t.artists ?? []).map((a) => a.name).join(", "),
+    year: t.album?.release_date ? String(t.album.release_date).slice(0, 4) : null,
+  };
+}
+
+// Die naechsten Titel der laufenden Playlist lesen (ohne sie abzuspielen).
+export async function getQueue(): Promise<{
+  current: TrackInfo | null;
+  upcoming: TrackInfo[];
+}> {
+  const data = await api<
+    { currently_playing?: RawQueueTrack; queue?: RawQueueTrack[] } | undefined
+  >("/me/player/queue");
+  const current = toTrackInfo(data?.currently_playing);
+  const upcoming = (data?.queue ?? [])
+    .map(toTrackInfo)
+    .filter((t): t is TrackInfo => t !== null);
+  return { current, upcoming };
+}
+
+// Einen BESTIMMTEN Titel INNERHALB der Playlist starten – kein Ueberspringen,
+// und die Warteschlange bleibt weiter mit Playlist-Titeln gefuellt.
+export async function playTrackInContext(
+  playlistId: string,
+  trackUri: string,
+  deviceId: string
+): Promise<void> {
+  await api(`/me/player/play?device_id=${deviceId}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      context_uri: `spotify:playlist:${playlistId}`,
+      offset: { uri: trackUri },
+    }),
+  });
+}
+
 // ---------- Playlists ----------
 export async function getMyPlaylists(): Promise<SpotifyPlaylist[]> {
   const out: SpotifyPlaylist[] = [];

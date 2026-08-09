@@ -20,6 +20,22 @@ create table if not exists burned_song (
 
 create index if not exists idx_burned_runde on burned_song(spielrunde_id);
 
+-- Ueber die Warteschlange angelernte Titel einer Playlist (gruppenuebergreifend
+-- geteilt), damit gesperrte Songs gezielt uebersprungen werden koennen, ohne
+-- sie anzuspielen.
+create table if not exists playlist_track (
+  playlist_id text not null,
+  track_id    text not null,
+  uri         text not null,
+  title       text,
+  artist      text,
+  year        text,
+  primary key (playlist_id, track_id)
+);
+alter table playlist_track enable row level security;
+create policy "anon_all_playlist_track" on playlist_track
+  for all to anon using (true) with check (true);
+
 -- Row Level Security aktivieren, aber dem anonymen Schluessel (Browser ohne
 -- Login) Zugriff geben. Die Daten sind unkritisch (Gruppennamen + Track-IDs).
 alter table spielrunde enable row level security;
