@@ -29,11 +29,16 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const yearOf = (d?: string | null): number | null =>
   d && d.length >= 4 ? parseInt(d.slice(0, 4), 10) : null;
 
+// Liefert JSON, null bei 404 (ISRC/Work unbekannt), wirft sonst mit Detail.
 async function mb(path: string): Promise<any> {
   const res = await fetch(`${MB}${path}`, {
     headers: { "User-Agent": UA, Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`MusicBrainz ${res.status}`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`MusicBrainz ${res.status} ${body.slice(0, 120)}`.trim());
+  }
   return res.json();
 }
 
@@ -66,7 +71,7 @@ async function resolveByIsrc(isrc: string): Promise<Resolved | null> {
     const w = await mb(
       `/recording?work=${workMbid}&inc=artist-credits&limit=100&fmt=json`
     );
-    const sameArtist = (w.recordings ?? []).filter((r: any) =>
+    const sameArtist = (w?.recordings ?? []).filter((r: any) =>
       (r["artist-credit"] ?? []).some((ac: any) => ac.artist?.id === artistMbid)
     );
     const years = sameArtist
@@ -139,11 +144,11 @@ export async function handler(event: { body: string | null }) {
 
     // 3) MusicBrainz befragen.
     let resolved: Resolved | null = null;
-    let mbError = false;
+    let mbErr: string | null = null;
     try {
       resolved = await resolveByIsrc(t.isrc);
-    } catch {
-      mbError = true;
+    } catch (e) {
+      mbErr = (e as Error).message;
     }
 
     // 3a) Kein Treffer -> Spotify-Fallback, aber NICHT cachen (wiederholbar).
@@ -152,7 +157,8 @@ export async function handler(event: { body: string | null }) {
         year: t.fallbackYear ?? null,
         source: "spotify_fallback",
         confidence: "low",
-        reason: mbError ? "mb_error" : "mb_notfound",
+        reason: mbErr ? "mb_error" : "mb_notfound",
+        debug: mbErr ?? undefined,
       });
     }
 
@@ -179,7 +185,15 @@ export async function handler(event: { body: string | null }) {
       cached: false,
     });
   } catch (e) {
-    return { statusCode: 500, body: (e as Error).message };
+    // Auch bei einem internen Fehler mit 200 + Grund antworten, damit das
+    // Frontend die konkrete Ursache anzeigen kann (statt nur "500").
+    return json({
+      year: null,
+      source: "spotify_fallback",
+      confidence: "low",
+      reason: "function_error",
+      debug: (e as Error).message,
+    });
   }
 }
 

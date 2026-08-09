@@ -281,6 +281,7 @@ export function Game({
       no_isrc: "Aus Spotify · keine ISRC",
       mb_notfound: "Aus Spotify · bei MusicBrainz nicht gefunden",
       mb_error: "Aus Spotify · MusicBrainz-Fehler",
+      function_error: "Aus Spotify · Server-Fehler",
       server_unreachable: "Aus Spotify · Server nicht erreicht",
     };
     return { text: why[y.reason] ?? "Jahr vorläufig aus Spotify", cls: "low" };
@@ -357,6 +358,11 @@ export function Game({
             >
               {yearBadge.text}
             </span>
+            {phase === "year" &&
+              yearInfo?.debug &&
+              yearInfo.source !== "musicbrainz" && (
+                <div className="year-debug">{yearInfo.debug}</div>
+              )}
 
             {phase === "meta" ? (
               <button disabled={busy} onClick={() => setPhase("year")}>

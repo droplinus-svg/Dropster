@@ -9,6 +9,7 @@ export type YearReason =
   | "no_isrc" // Track ohne ISRC -> MusicBrainz nicht befragbar
   | "mb_notfound" // MusicBrainz kennt den Song nicht
   | "mb_error" // MusicBrainz-Aufruf fehlgeschlagen
+  | "function_error" // Netlify-Funktion selbst hat einen Fehler
   | "server_unreachable"; // Netlify-Funktion nicht erreichbar
 
 export interface YearResult {
@@ -16,6 +17,7 @@ export interface YearResult {
   source: YearSource;
   confidence: "high" | "medium" | "low";
   reason: YearReason;
+  debug?: string; // Klartext-Ursache bei Fehlern (zur Diagnose)
 }
 
 // Erscheinungsjahr nach der Regel "Erstveroeffentlichung durch DIESEN
@@ -70,14 +72,17 @@ export async function resolveYear(t: TrackInfo): Promise<YearResult> {
         source: (j.source as YearSource) ?? "spotify",
         confidence: j.confidence ?? "low",
         reason: (j.reason as YearReason) ?? "mb_error",
+        debug: j.debug,
       };
     }
     // Funktion antwortet, aber mit Fehlerstatus (z. B. 500).
+    const body = await res.text().catch(() => "");
     return {
       year: fallback,
       source: "spotify",
       confidence: "low",
-      reason: "mb_error",
+      reason: "function_error",
+      debug: `HTTP ${res.status}: ${body.slice(0, 300)}`,
     };
   } catch {
     // Funktion gar nicht erreichbar (lokal/offline/404).
