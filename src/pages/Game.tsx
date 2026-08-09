@@ -142,6 +142,17 @@ export function Game({
     return false;
   }
 
+  // Warten, bis nach dem Kontext-Start wirklich ein NEUER Titel laeuft
+  // (nicht mehr der Begruessungssong).
+  async function waitForContextTrack(prevId: string | null) {
+    for (let i = 0; i < 12; i++) {
+      await sleep(350);
+      const np = await getCurrentlyPlaying();
+      if (np?.id && np.id !== prevId && np.id !== AMBIENT_ID) return np;
+    }
+    return await getCurrentlyPlaying();
+  }
+
   async function playRound() {
     setMsg("");
     setBusy(true);
@@ -153,10 +164,22 @@ export function Game({
       // dabei die Warteschlange lernen (das ist der einzige Moment, in dem wir
       // im Playlist-Kontext sind und die Queue Playlist-Titel liefert).
       if (!cand) {
+        const prevId = (await getCurrentlyPlaying())?.id ?? null; // ggf. Begruessungssong
         dev = await startPlaylist(playlistId);
         setDeviceId(dev);
-        await sleep(800); // Kontext laden lassen
-        await learnFromQueue(); // nur kommende Playlist-Titel
+        const np = await waitForContextTrack(prevId);
+        await learnFromQueue(); // kommende Titel fuer Folgerunden lernen
+        if (np?.id && np.id !== AMBIENT_ID && !played.has(np.id)) {
+          // Kontext-Song laeuft schon -> direkt als Rundensong nehmen (kein Umspringen).
+          lockRound({
+            id: np.id,
+            uri: "",
+            title: np.name,
+            artist: np.artists.join(", "),
+            year: np.year,
+          });
+          return;
+        }
         cand = pickCandidate();
       }
 
@@ -266,23 +289,25 @@ export function Game({
             <div className="lbl">Interpret</div>
             <div className="reveal-artist">{current.artist}</div>
 
-            {phase === "meta" && (
+            <div className="lbl">Erschienen</div>
+            <div className="reveal-year">
+              {phase === "year" ? current.year ?? "—" : "?"}
+            </div>
+            <span
+              className="badge low"
+              style={{ visibility: phase === "year" ? "visible" : "hidden" }}
+            >
+              Jahr noch vorläufig aus Spotify
+            </span>
+
+            {phase === "meta" ? (
               <button disabled={busy} onClick={() => setPhase("year")}>
                 Jahr zeigen
               </button>
-            )}
-
-            {phase === "year" && (
-              <>
-                <div className="lbl">Erschienen</div>
-                <div className="reveal-year">{current.year ?? "—"}</div>
-                <span className="badge low">
-                  Jahr noch vorläufig aus Spotify
-                </span>
-                <button disabled={busy} onClick={playRound}>
-                  {busy ? "…" : "Nächste Runde"}
-                </button>
-              </>
+            ) : (
+              <button disabled={busy} onClick={playRound}>
+                {busy ? "…" : "Nächste Runde"}
+              </button>
             )}
           </div>
         )}
