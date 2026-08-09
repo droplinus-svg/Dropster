@@ -3,11 +3,12 @@ import { supabaseConfigured } from "../lib/supabase";
 import {
   createSpielrunde,
   listSpielrunden,
+  resetSpielrunde,
   type Spielrunde,
 } from "../lib/groups";
 
-// Spielrunde waehlen: neue Gruppe anlegen, bestehende fortsetzen, oder ohne
-// dauerhafte Sperrliste spielen (null).
+// Spielrunde waehlen: neue Gruppe anlegen, bestehende fortsetzen (oder deren
+// Sperrliste zuruecksetzen), oder ohne dauerhafte Sperrliste spielen (null).
 export function GroupSelect({
   onPick,
   onLogout,
@@ -20,6 +21,7 @@ export function GroupSelect({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [confirmReset, setConfirmReset] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -48,6 +50,20 @@ export function GroupSelect({
     }
   }
 
+  async function doReset(id: string) {
+    setBusy(true);
+    setMsg("");
+    try {
+      await resetSpielrunde(id);
+      setMsg("Sperrliste zurückgesetzt – alle Songs sind wieder frei.");
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setConfirmReset(null);
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="stack">
       <div className="panel stack">
@@ -71,7 +87,6 @@ export function GroupSelect({
         <button disabled={busy || !name.trim()} onClick={create}>
           Neue Runde starten
         </button>
-        {msg && <p className="muted">{msg}</p>}
       </div>
 
       {loading && <p className="muted">Lade Runden …</p>}
@@ -80,21 +95,55 @@ export function GroupSelect({
         <div className="panel stack">
           <strong>Bestehende Runde fortsetzen</strong>
           {runden.map((r) => (
-            <button
-              key={r.id}
-              className="secondary"
-              onClick={() => onPick(r)}
-            >
-              {r.name}
-            </button>
+            <div key={r.id} className="group-row">
+              <button
+                className="secondary group-name"
+                onClick={() => onPick(r)}
+              >
+                {r.name}
+              </button>
+              {confirmReset === r.id ? (
+                <span className="group-confirm">
+                  <span className="muted">Sperrliste löschen?</span>
+                  <button
+                    className="linklike"
+                    disabled={busy}
+                    onClick={() => doReset(r.id)}
+                  >
+                    Ja
+                  </button>
+                  <button
+                    className="linklike"
+                    onClick={() => setConfirmReset(null)}
+                  >
+                    Nein
+                  </button>
+                </span>
+              ) : (
+                <button
+                  className="linklike"
+                  onClick={() => setConfirmReset(r.id)}
+                >
+                  zurücksetzen
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}
 
-      <button className="secondary" onClick={() => onPick(null)}>
-        Ohne Sperrliste spielen
-      </button>
-      <button className="linklike" onClick={onLogout}>
+      {msg && (
+        <div className="panel">
+          <p className="muted">{msg}</p>
+        </div>
+      )}
+
+      <div className="panel stack">
+        <button className="secondary" onClick={() => onPick(null)}>
+          Ohne Sperrliste spielen
+        </button>
+      </div>
+      <button className="linklike logout-link" onClick={onLogout}>
         Abmelden
       </button>
     </div>

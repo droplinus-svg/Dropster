@@ -263,6 +263,42 @@ select, input {
 }
 .footer-actions { display: flex; gap: 4px; }
 
+.end-btn {
+  width: auto;
+  align-self: center;
+  margin-top: 4px;
+  background: #2a2f3a;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 12px 24px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.end-btn span { color: var(--danger); font-size: 18px; }
+
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.group-name { flex: 1; }
+
+.logout-link {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 13px;
+  align-self: center;
+  margin-top: 6px;
+}
+.group-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
 /* Info-Button + Overlay */
 .info-btn {
   position: fixed;

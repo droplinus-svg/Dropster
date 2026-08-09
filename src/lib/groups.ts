@@ -40,6 +40,16 @@ export async function loadBlacklist(spielrundeId: string): Promise<string[]> {
   return (data ?? []).map((r: { track_id: string }) => r.track_id);
 }
 
+// Alle gesperrten Songs einer Spielrunde wieder freigeben.
+export async function resetSpielrunde(spielrundeId: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from("burned_song")
+    .delete()
+    .eq("spielrunde_id", spielrundeId);
+  if (error) throw new Error(error.message);
+}
+
 // Einen gespielten Song fuer die Spielrunde sperren.
 export async function burnSong(
   spielrundeId: string,

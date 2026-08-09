@@ -244,19 +244,19 @@ export function Game({
       )}
 
       {!deviceLost && (
-        <div className="footer-meta">
-          <span>
-            {playlistName} · Runde {round}
-          </span>
-          <span className="footer-actions">
+        <>
+          <div className="footer-meta">
+            <span>
+              {playlistName} · Runde {round}
+            </span>
             <button className="linklike" onClick={onChangePlaylist}>
               Andere Playlist
             </button>
-            <button className="linklike" onClick={endGame}>
-              Beenden
-            </button>
-          </span>
-        </div>
+          </div>
+          <button className="end-btn" onClick={endGame}>
+            <span aria-hidden="true">⏹</span> Spiel beenden
+          </button>
+        </>
       )}
     </div>
   );
