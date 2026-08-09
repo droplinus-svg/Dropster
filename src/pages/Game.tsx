@@ -4,7 +4,6 @@ import {
   getQueue,
   pausePlayback,
   playTrack,
-  playTrackInContext,
   searchAmbientUri,
   skipNext,
   startPlaylist,
@@ -75,26 +74,24 @@ export function Game({
     })();
   }, [spielrundeId, playlistId]);
 
-  // Warteschlange lesen und neue Titel merken (spielt nichts ab).
-  async function learnFromQueue(): Promise<{ current: TrackInfo | null }> {
+  // Nur die KOMMENDEN Playlist-Titel merken (nicht den gerade laufenden – der
+  // koennte noch der Begruessungssong sein). Spielt nichts ab.
+  async function learnFromQueue(): Promise<void> {
     try {
       const q = await getQueue();
       const fresh: TrackInfo[] = [];
-      const add = (t: TrackInfo | null) => {
-        if (!t || t.id === AMBIENT_ID) return;
+      q.upcoming.forEach((t) => {
+        if (t.id === AMBIENT_ID) return;
         if (!knownRef.current.has(t.id)) {
           knownRef.current.set(t.id, t);
           fresh.push(t);
         }
-      };
-      add(q.current);
-      q.upcoming.forEach(add);
+      });
       if (fresh.length && supabaseConfigured) {
         recordTracks(playlistId, fresh).catch(() => {});
       }
-      return { current: q.current };
     } catch {
-      return { current: null }; // Warteschlange nicht verfuegbar
+      /* Warteschlange nicht verfuegbar */
     }
   }
 
@@ -119,7 +116,6 @@ export function Game({
     }
     setRound((r) => r + 1);
     setPhase("playing");
-    learnFromQueue().catch(() => {}); // im Hintergrund weiterlernen
   }
 
   // Notnagel: alte Methode – zufaellig starten und gesperrte Songs ueberspringen.
@@ -151,40 +147,28 @@ export function Game({
     setBusy(true);
     try {
       let dev = deviceId;
+      let cand = dev ? pickCandidate() : null;
 
-      // Erststart: Kontext anspielen (kurzer Anlern-Moment) und Queue lesen.
-      if (!dev) {
+      // Kein Geraet ODER kein bekannter freier Titel -> Kontext anspielen und
+      // dabei die Warteschlange lernen (das ist der einzige Moment, in dem wir
+      // im Playlist-Kontext sind und die Queue Playlist-Titel liefert).
+      if (!cand) {
         dev = await startPlaylist(playlistId);
         setDeviceId(dev);
-        const boot = await learnFromQueue();
-        if (boot.current && !played.has(boot.current.id)) {
-          lockRound(boot.current); // Anlern-Song ist frei -> direkt nehmen
-          return;
-        }
-      }
-
-      // Bekannten freien Titel gezielt spielen (kein Ueberspringen).
-      let cand = pickCandidate();
-
-      // Nichts Freies bekannt? -> Kontext anspielen, dazulernen, nochmal.
-      if (!cand) {
-        await startPlaylist(playlistId);
-        const boot = await learnFromQueue();
-        if (boot.current && !played.has(boot.current.id)) {
-          lockRound(boot.current);
-          return;
-        }
+        await sleep(800); // Kontext laden lassen
+        await learnFromQueue(); // nur kommende Playlist-Titel
         cand = pickCandidate();
       }
 
+      // Bekannten freien Titel zuverlaessig als Einzel-Track spielen.
       if (cand) {
-        await playTrackInContext(playlistId, cand.uri, dev);
+        await playTrack(cand.uri, dev!);
         lockRound(cand);
         return;
       }
 
       // Letzter Notnagel: alte Skip-Methode.
-      if (!(await skipFallback(dev))) {
+      if (dev && !(await skipFallback(dev))) {
         setMsg("Alle Songs dieser Playlist wurden gespielt. 🎉");
         setPhase("idle");
       }
