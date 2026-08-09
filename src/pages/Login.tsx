@@ -15,7 +15,7 @@ export function Login() {
       />
       <div className="panel stack">
         <p className="muted" style={{ textAlign: "center" }}>
-          Melde dich mit deinem <strong>Spotify-Premium-Konto</strong> an.
+          Melde dich mit deinem <strong>Spotify-Premium-Konto&#160;an.</strong>
         </p>
         <button onClick={() => beginLogin()}>Mit Spotify anmelden</button>
       </div>

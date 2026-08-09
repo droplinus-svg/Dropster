@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import type { TrackInfo } from "../spotify/api";
+import { getTrackIsrc, type TrackInfo } from "../spotify/api";
 
 export type YearSource = "musicbrainz" | "spotify_fallback" | "spotify";
 
@@ -52,14 +52,21 @@ export async function resolveYear(t: TrackInfo): Promise<YearResult> {
     }
   }
 
-  // 2) Netlify-Funktion (MusicBrainz + Cache-Schreiben nur bei Treffer).
+  // 2) ISRC sicherstellen: Warteschlange/Datenbank liefern sie oft nicht mit.
+  //    Dann gezielt ueber /tracks/{id} nachladen (im Dev-Mode nicht gesperrt).
+  let isrc = t.isrc;
+  if (!isrc) {
+    isrc = await getTrackIsrc(t.id);
+  }
+
+  // 3) Netlify-Funktion (MusicBrainz + Cache-Schreiben nur bei Treffer).
   try {
     const res = await fetch("/.netlify/functions/year", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         trackId: t.id,
-        isrc: t.isrc,
+        isrc,
         title: t.title,
         artist: t.artist,
         fallbackYear: fallback,
@@ -90,7 +97,7 @@ export async function resolveYear(t: TrackInfo): Promise<YearResult> {
       year: fallback,
       source: "spotify",
       confidence: "low",
-      reason: t.isrc ? "server_unreachable" : "no_isrc",
+      reason: isrc ? "server_unreachable" : "no_isrc",
     };
   }
 }

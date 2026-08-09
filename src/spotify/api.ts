@@ -224,6 +224,21 @@ export async function getCurrentlyPlaying(): Promise<NowPlaying | null> {
   };
 }
 
+// ISRC eines einzelnen Titels holen. Der Einzeltitel-Endpoint /tracks/{id}
+// liefert external_ids.isrc zuverlaessig und ist – anders als die
+// Playlist-Endpoints – im Dev-Mode nicht gesperrt. Wird genutzt, um die ISRC
+// nachzuladen, wenn Warteschlange/Datenbank sie nicht mitgeliefert haben.
+export async function getTrackIsrc(id: string): Promise<string | null> {
+  try {
+    const data = await api<{ external_ids?: { isrc?: string } } | undefined>(
+      `/tracks/${id}`
+    );
+    return data?.external_ids?.isrc ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // Lautstaerke setzen – wir nutzen "auf 0" als sanftes "Stopp", das die
 // Spotify-App aktiv (und damit verbunden) haelt.
 export async function setVolume(
