@@ -7,28 +7,65 @@
 //   - gleicher Interpret (Neuaufnahme/Remaster) -> Erstveroeffentlichung durch ihn
 //   - anderer Interpret (Cover)                 -> Erstveroeffentlichung dieser Version
 //
+// WICHTIG: Wir sprechen Supabase hier per REST (fetch) an, NICHT ueber
+// @supabase/supabase-js. Die JS-Bibliothek zieht serverseitig eine
+// WebSocket-Komponente nach, die unter Node < 22 abstuerzt
+// ("native WebSocket not found"). Reines fetch vermeidet das komplett.
+//
 // MusicBrainz erlaubt ~1 Anfrage/Sekunde und verlangt einen aussagekraeftigen
 // User-Agent. Pro Track fallen max. 2 Anfragen an.
-
-import { createClient } from "@supabase/supabase-js";
 
 const MB = "https://musicbrainz.org/ws/2";
 const UA = `Dropster/0.1 ( ${process.env.MUSICBRAINZ_CONTACT ?? "unknown"} )`;
 
-// Der anonyme Schluessel reicht: year_cache hat eine permissive anon-Policy.
 const SUPA_URL = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL;
 const SUPA_KEY =
   process.env.VITE_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY;
-
-const supabase =
-  SUPA_URL && SUPA_KEY
-    ? createClient(SUPA_URL, SUPA_KEY, { auth: { persistSession: false } })
-    : null;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const yearOf = (d?: string | null): number | null =>
   d && d.length >= 4 ? parseInt(d.slice(0, 4), 10) : null;
 
+// ---------- Supabase per REST (kein WebSocket) ----------
+function supaHeaders(): Record<string, string> {
+  return {
+    apikey: SUPA_KEY!,
+    Authorization: `Bearer ${SUPA_KEY}`,
+    "Content-Type": "application/json",
+  };
+}
+
+async function cacheRead(trackId: string): Promise<{
+  resolved_year: number | null;
+  source: string | null;
+  confidence: string | null;
+} | null> {
+  if (!SUPA_URL || !SUPA_KEY) return null;
+  const url =
+    `${SUPA_URL}/rest/v1/year_cache` +
+    `?select=resolved_year,source,confidence&track_id=eq.${encodeURIComponent(
+      trackId
+    )}&limit=1`;
+  const res = await fetch(url, { headers: supaHeaders() });
+  if (!res.ok) return null;
+  const rows = (await res.json()) as any[];
+  return rows?.[0] ?? null;
+}
+
+async function cacheWrite(row: Record<string, unknown>): Promise<void> {
+  if (!SUPA_URL || !SUPA_KEY) return;
+  // Upsert per PostgREST: Prefer merge-duplicates loest den Primary-Key-Konflikt.
+  await fetch(`${SUPA_URL}/rest/v1/year_cache`, {
+    method: "POST",
+    headers: {
+      ...supaHeaders(),
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify([row]),
+  }).catch(() => {});
+}
+
+// ---------- MusicBrainz ----------
 // Liefert JSON, null bei 404 (ISRC/Work unbekannt), wirft sonst mit Detail.
 async function mb(path: string): Promise<any> {
   const res = await fetch(`${MB}${path}`, {
@@ -115,21 +152,15 @@ export async function handler(event: { body: string | null }) {
     // 1) Cache? – aber NUR echten MusicBrainz-Treffern vertrauen. Alte
     //    Spotify-Fallbacks duerfen einen erneuten MusicBrainz-Versuch nicht
     //    blockieren.
-    if (supabase) {
-      const { data: hit } = await supabase
-        .from("year_cache")
-        .select("resolved_year,source,confidence")
-        .eq("track_id", t.trackId)
-        .maybeSingle();
-      if (hit && hit.resolved_year != null && hit.source === "musicbrainz") {
-        return json({
-          year: hit.resolved_year,
-          source: hit.source,
-          confidence: hit.confidence,
-          reason: "mb_hit",
-          cached: true,
-        });
-      }
+    const hit = await cacheRead(t.trackId).catch(() => null);
+    if (hit && hit.resolved_year != null && hit.source === "musicbrainz") {
+      return json({
+        year: hit.resolved_year,
+        source: hit.source,
+        confidence: hit.confidence,
+        reason: "mb_hit",
+        cached: true,
+      });
     }
 
     // 2) Ohne ISRC ist MusicBrainz nicht befragbar.
@@ -163,19 +194,17 @@ export async function handler(event: { body: string | null }) {
     }
 
     // 3b) Echter MusicBrainz-Treffer -> dauerhaft cachen.
-    if (supabase) {
-      await supabase.from("year_cache").upsert({
-        track_id: t.trackId,
-        isrc: t.isrc ?? null,
-        title: t.title ?? null,
-        artist: t.artist ?? null,
-        artist_mbid: resolved.artistMbid,
-        resolved_year: resolved.year,
-        source: resolved.source,
-        confidence: resolved.confidence,
-        updated_at: new Date().toISOString(),
-      });
-    }
+    await cacheWrite({
+      track_id: t.trackId,
+      isrc: t.isrc ?? null,
+      title: t.title ?? null,
+      artist: t.artist ?? null,
+      artist_mbid: resolved.artistMbid,
+      resolved_year: resolved.year,
+      source: resolved.source,
+      confidence: resolved.confidence,
+      updated_at: new Date().toISOString(),
+    });
 
     return json({
       year: resolved.year,
