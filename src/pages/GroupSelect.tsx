@@ -158,7 +158,7 @@ export function GroupSelect({
               className={"seg-btn" + (!showNew ? " active" : "")}
               onClick={() => setMode("continue")}
             >
-              Fortsetzen <span className="seg-count">{runden.length}</span>
+              Meine Gruppen <span className="seg-count">{runden.length}</span>
             </button>
           </div>
         )}
@@ -181,7 +181,11 @@ export function GroupSelect({
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
-            <button disabled={busy || !name.trim()} onClick={create}>
+            <button
+              className={name.trim() ? "" : "btn-quiet"}
+              disabled={busy || !name.trim()}
+              onClick={create}
+            >
               Neue Gruppe starten
             </button>
           </>

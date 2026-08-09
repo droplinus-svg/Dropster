@@ -392,6 +392,17 @@ select, input {
 .group-dot { color: var(--muted); }
 .danger-link { color: var(--danger); }
 
+/* Ruhiger "Neue Gruppe starten"-Knopf, solange noch kein Name getippt ist –
+   damit der Fokus zuerst auf dem Namensfeld liegt. */
+.btn-quiet {
+  background: #202530;
+  color: var(--muted);
+}
+.btn-quiet:disabled {
+  opacity: 0.75;
+  cursor: default;
+}
+
 /* Umschalter im Spielgruppe-Kasten: Neue Gruppe | Fortsetzen */
 .seg {
   display: flex;
