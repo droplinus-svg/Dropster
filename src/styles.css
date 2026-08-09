@@ -139,6 +139,14 @@ select, input {
   word-break: break-word;
   max-width: 100%;
 }
+.recheck-btn {
+  width: auto;
+  margin-top: 12px;
+  padding: 10px 18px;
+  font-size: 14px;
+  background: #2a2f3a;
+  color: var(--text);
+}
 
 /* Spielablauf */
 .game-stage {
@@ -270,6 +278,7 @@ select, input {
   color: var(--muted);
   font-size: 13px;
   margin-top: 8px;
+  margin-bottom: 28px;
 }
 .linklike {
   width: auto;
@@ -382,6 +391,44 @@ select, input {
 }
 .group-dot { color: var(--muted); }
 .danger-link { color: var(--danger); }
+
+/* Umschalter im Spielgruppe-Kasten: Neue Gruppe | Fortsetzen */
+.seg {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 999px;
+  padding: 4px;
+}
+.seg-btn {
+  flex: 1;
+  width: auto;
+  background: transparent;
+  color: var(--muted);
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.seg-btn.active {
+  background: var(--accent);
+  color: #04180d;
+}
+.seg-count {
+  font-size: 12px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.16);
+  color: inherit;
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.seg-btn.active .seg-count {
+  background: rgba(4, 24, 13, 0.18);
+}
 
 /* Ausklappbares Menue der bestehenden Gruppen */
 .accordion-head {

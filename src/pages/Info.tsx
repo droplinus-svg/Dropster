@@ -20,7 +20,7 @@ export function Info({ onClose }: { onClose: () => void }) {
         <div className="panel stack">
           <p className="muted">
             <strong>So läuft’s:</strong> Der Spielleiter verbindet dieses Handy
-            mit der App und gibt es reihum. Jede:r braucht ein paar leere{" "}
+            mit der App und bedient sie. Jede:r braucht ein paar leere{" "}
             <strong>Klebezettel</strong> und einen Stift. Ziel ist, die Songs vor
             sich nach <strong>Erscheinungsjahr</strong> in eine Reihe zu bringen.
           </p>
@@ -46,7 +46,7 @@ export function Info({ onClose }: { onClose: () => void }) {
             Zettel wieder <strong>entfernen</strong>.
           </li>
           <li>
-            Handy weiter zum/zur Nächsten – <strong>Nächste Runde</strong>.
+            <strong>Nächste Runde</strong> – der/die Nächste ist dran.
           </li>
         </ol>
 
@@ -70,6 +70,34 @@ export function Info({ onClose }: { onClose: () => void }) {
             wo deiner Meinung nach das Jahr richtig läge – keinen Zettel, nur die
             Marke. Stimmt deine Position, gewinnst du – liegst du daneben, ist
             die Marke weg.
+          </p>
+        </div>
+
+        <div className="panel stack">
+          <p className="muted">
+            <strong>Woher kommt die Jahreszahl?</strong> Es zählt das Jahr, in
+            dem <strong>dieser Interpret dieses Lied zuerst veröffentlicht</strong>{" "}
+            hat. Bei einer späteren Neuaufnahme desselben Künstlers gilt also das{" "}
+            <strong>Original­jahr</strong> – bei einer Coverversion eines anderen
+            Künstlers das Jahr <strong>dieser</strong> Version. Dropster fragt
+            dafür die Musikdatenbank <strong>MusicBrainz</strong> ab, nicht nur
+            Spotify (dessen Jahr oft das einer Neuveröffentlichung oder
+            Compilation ist).
+          </p>
+          <p className="muted">
+            Die <strong>kleine Zeile unter dem Jahr</strong> sagt, wie sicher die
+            Angabe ist – wichtig, wenn ihr euch streitet:
+          </p>
+          <p className="muted" style={{ marginTop: 0 }}>
+            <span className="badge ok">Erstveröffentlichung · MusicBrainz</span>{" "}
+            – verlässlich, das gesuchte Original­jahr.
+            <br />
+            <span className="badge ok">Aufnahmejahr · MusicBrainz</span> – aus
+            MusicBrainz, aber ohne klare Original-Zuordnung.
+            <br />
+            <span className="badge low">Aus Spotify …</span> – Notlösung, wenn
+            MusicBrainz den Song nicht kennt. Diese Zahl mit Vorsicht genießen –
+            im Zweifel gilt bei euch die Gruppen­entscheidung.
           </p>
         </div>
 

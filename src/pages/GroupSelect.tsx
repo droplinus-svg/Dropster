@@ -49,9 +49,9 @@ function VinylIcon() {
   );
 }
 
-// Spielrunde waehlen: neue Gruppe anlegen, bestehende fortsetzen (deren
-// Sperrliste zuruecksetzen oder die Gruppe loeschen), oder ohne dauerhafte
-// Sperrliste spielen (null).
+// Spielrunde waehlen: im selben Kasten entweder eine neue Gruppe anlegen ODER
+// eine bestehende fortsetzen (zuruecksetzen/loeschen). Darunter: ohne
+// dauerhafte Sperrliste spielen (null).
 export function GroupSelect({
   onPick,
   onLogout,
@@ -66,7 +66,7 @@ export function GroupSelect({
   const [msg, setMsg] = useState("");
   const [confirmReset, setConfirmReset] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"new" | "continue">("new");
   const [filter, setFilter] = useState("");
 
   useEffect(() => {
@@ -131,6 +131,10 @@ export function GroupSelect({
       )
     : runden;
 
+  // Ohne bestehende Gruppen gibt es nichts fortzusetzen -> immer "neu".
+  const hasGroups = runden.length > 0;
+  const showNew = mode === "new" || !hasGroups;
+
   return (
     <div className="stack">
       <div className="group-hero stack">
@@ -141,128 +145,132 @@ export function GroupSelect({
             <div className="group-hero-sub">Wer spielt heute mit?</div>
           </div>
         </div>
-        <p className="group-hero-text">
-          Gib der Gruppe einen Namen. Songs, die ihr spielt, bleiben für diese
-          Gruppe <strong>dauerhaft gesperrt</strong> und kommen nicht wieder –
-          egal wie oft ihr zusammen spielt.
-        </p>
-        {!supabaseConfigured && (
-          <p className="group-hero-text">
-            Hinweis: Ohne Datenbank merkt sich Dropster die Sperrliste nur,
-            solange die App offen ist.
-          </p>
+
+        {hasGroups && (
+          <div className="seg">
+            <button
+              className={"seg-btn" + (showNew ? " active" : "")}
+              onClick={() => setMode("new")}
+            >
+              Neue Gruppe
+            </button>
+            <button
+              className={"seg-btn" + (!showNew ? " active" : "")}
+              onClick={() => setMode("continue")}
+            >
+              Fortsetzen <span className="seg-count">{runden.length}</span>
+            </button>
+          </div>
         )}
-        <input
-          placeholder="z. B. Familienabend"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <button disabled={busy || !name.trim()} onClick={create}>
-          Neue Gruppe starten
-        </button>
+
+        {showNew ? (
+          <>
+            <p className="group-hero-text">
+              Gib der Gruppe einen Namen. Songs, die ihr spielt, bleiben für diese
+              Gruppe <strong>dauerhaft gesperrt</strong> und kommen nicht wieder –
+              egal wie oft ihr zusammen spielt.
+            </p>
+            {!supabaseConfigured && (
+              <p className="group-hero-text">
+                Hinweis: Ohne Datenbank merkt sich Dropster die Sperrliste nur,
+                solange die App offen ist.
+              </p>
+            )}
+            <input
+              placeholder="z. B. Familienabend"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <button disabled={busy || !name.trim()} onClick={create}>
+              Neue Gruppe starten
+            </button>
+          </>
+        ) : (
+          <div className="stack group-list">
+            {runden.length > 6 && (
+              <input
+                placeholder="Gruppe suchen …"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+            )}
+            {gefiltert.length === 0 && (
+              <p className="group-hero-text">Keine Gruppe passt zu „{filter}“.</p>
+            )}
+            {gefiltert.map((r) => (
+              <div key={r.id} className="group-block">
+                <div className="group-row">
+                  <button
+                    className="secondary group-name"
+                    onClick={() => onPick(r)}
+                  >
+                    {r.name}
+                  </button>
+                </div>
+                {confirmReset === r.id ? (
+                  <span className="group-confirm">
+                    <span className="muted">Sperrliste löschen?</span>
+                    <button
+                      className="linklike"
+                      disabled={busy}
+                      onClick={() => doReset(r.id)}
+                    >
+                      Ja
+                    </button>
+                    <button
+                      className="linklike"
+                      onClick={() => setConfirmReset(null)}
+                    >
+                      Nein
+                    </button>
+                  </span>
+                ) : confirmDelete === r.id ? (
+                  <span className="group-confirm">
+                    <span className="muted">Gruppe wirklich löschen?</span>
+                    <button
+                      className="linklike danger-link"
+                      disabled={busy}
+                      onClick={() => doDelete(r.id)}
+                    >
+                      Ja, löschen
+                    </button>
+                    <button
+                      className="linklike"
+                      onClick={() => setConfirmDelete(null)}
+                    >
+                      Nein
+                    </button>
+                  </span>
+                ) : (
+                  <span className="group-actions">
+                    <button
+                      className="linklike"
+                      onClick={() => {
+                        setConfirmDelete(null);
+                        setConfirmReset(r.id);
+                      }}
+                    >
+                      zurücksetzen
+                    </button>
+                    <span className="group-dot">·</span>
+                    <button
+                      className="linklike danger-link"
+                      onClick={() => {
+                        setConfirmReset(null);
+                        setConfirmDelete(r.id);
+                      }}
+                    >
+                      löschen
+                    </button>
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {loading && <p className="muted">Lade Gruppen …</p>}
-
-      {runden.length > 0 && (
-        <div className="panel stack">
-          <button
-            className="accordion-head"
-            aria-expanded={open}
-            onClick={() => setOpen((o) => !o)}
-          >
-            <span>Bestehende Gruppe fortsetzen</span>
-            <span className="accordion-count">{runden.length}</span>
-            <span className={"chev" + (open ? " up" : "")} aria-hidden="true">
-              ▾
-            </span>
-          </button>
-
-          {open && (
-            <div className="stack group-list">
-              {runden.length > 6 && (
-                <input
-                  placeholder="Gruppe suchen …"
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                />
-              )}
-              {gefiltert.length === 0 && (
-                <p className="muted">Keine Gruppe passt zu „{filter}“.</p>
-              )}
-              {gefiltert.map((r) => (
-                <div key={r.id} className="group-block">
-                  <div className="group-row">
-                    <button
-                      className="secondary group-name"
-                      onClick={() => onPick(r)}
-                    >
-                      {r.name}
-                    </button>
-                  </div>
-                  {confirmReset === r.id ? (
-                    <span className="group-confirm">
-                      <span className="muted">Sperrliste löschen?</span>
-                      <button
-                        className="linklike"
-                        disabled={busy}
-                        onClick={() => doReset(r.id)}
-                      >
-                        Ja
-                      </button>
-                      <button
-                        className="linklike"
-                        onClick={() => setConfirmReset(null)}
-                      >
-                        Nein
-                      </button>
-                    </span>
-                  ) : confirmDelete === r.id ? (
-                    <span className="group-confirm">
-                      <span className="muted">Gruppe wirklich löschen?</span>
-                      <button
-                        className="linklike danger-link"
-                        disabled={busy}
-                        onClick={() => doDelete(r.id)}
-                      >
-                        Ja, löschen
-                      </button>
-                      <button
-                        className="linklike"
-                        onClick={() => setConfirmDelete(null)}
-                      >
-                        Nein
-                      </button>
-                    </span>
-                  ) : (
-                    <span className="group-actions">
-                      <button
-                        className="linklike"
-                        onClick={() => {
-                          setConfirmDelete(null);
-                          setConfirmReset(r.id);
-                        }}
-                      >
-                        zurücksetzen
-                      </button>
-                      <span className="group-dot">·</span>
-                      <button
-                        className="linklike danger-link"
-                        onClick={() => {
-                          setConfirmReset(null);
-                          setConfirmDelete(r.id);
-                        }}
-                      >
-                        löschen
-                      </button>
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {msg && (
         <div className="panel">

@@ -67,11 +67,18 @@ async function cacheWrite(row: Record<string, unknown>): Promise<void> {
 
 // ---------- MusicBrainz ----------
 // Liefert JSON, null bei 404 (ISRC/Work unbekannt), wirft sonst mit Detail.
-async function mb(path: string): Promise<any> {
+// Bei 503 ("server busy") oder 429 (Rate-Limit) wird mit kurzer Pause
+// automatisch erneut versucht – das faengt die haeufigen, kurzlebigen
+// Ueberlastungen von MusicBrainz ab, ohne dass der Spieler etwas merkt.
+async function mb(path: string, tries = 0): Promise<any> {
   const res = await fetch(`${MB}${path}`, {
     headers: { "User-Agent": UA, Accept: "application/json" },
   });
   if (res.status === 404) return null;
+  if ((res.status === 503 || res.status === 429) && tries < 3) {
+    await sleep(1200 * (tries + 1)); // 1,2s / 2,4s / 3,6s
+    return mb(path, tries + 1);
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`MusicBrainz ${res.status} ${body.slice(0, 120)}`.trim());

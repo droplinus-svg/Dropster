@@ -53,6 +53,7 @@ export function Game({
   const [played, setPlayed] = useState<Set<string>>(new Set());
   const [round, setRound] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [recheck, setRecheck] = useState(false);
   const [msg, setMsg] = useState("");
 
   // Bekannte Titel der Playlist (ueber die Warteschlange angelernt).
@@ -254,6 +255,20 @@ export function Game({
     }
   }
 
+  // Jahr auf Wunsch noch einmal aufloesen (z. B. nach einem MusicBrainz-503).
+  async function recheckYear() {
+    if (!current) return;
+    setRecheck(true);
+    setYearInfo(null);
+    try {
+      setYearInfo(await resolveYear(current));
+    } catch {
+      /* bleibt beim vorlaeufigen Jahr */
+    } finally {
+      setRecheck(false);
+    }
+  }
+
   async function endGame() {
     try {
       if (deviceId) await pausePlayback(deviceId);
@@ -362,6 +377,20 @@ export function Game({
               yearInfo?.debug &&
               yearInfo.source !== "musicbrainz" && (
                 <div className="year-debug">{yearInfo.debug}</div>
+              )}
+            {phase === "year" &&
+              yearInfo &&
+              yearInfo.source !== "musicbrainz" &&
+              ["mb_error", "function_error", "server_unreachable"].includes(
+                yearInfo.reason
+              ) && (
+                <button
+                  className="recheck-btn"
+                  disabled={recheck}
+                  onClick={recheckYear}
+                >
+                  {recheck ? "… wird geprüft" : "↻ Jahr erneut prüfen"}
+                </button>
               )}
 
             {phase === "meta" ? (
