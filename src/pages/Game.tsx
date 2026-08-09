@@ -3,6 +3,7 @@ import {
   getCurrentlyPlaying,
   getQueue,
   pausePlayback,
+  pickBestDeviceId,
   playTrack,
   searchAmbientUri,
   skipNext,
@@ -157,20 +158,30 @@ export function Game({
     setMsg("");
     setBusy(true);
     try {
+      // 1. Geraet sicherstellen – OHNE etwas abzuspielen.
       let dev = deviceId;
-      let cand = dev ? pickCandidate() : null;
+      if (!dev) {
+        dev = await pickBestDeviceId();
+        if (!dev) {
+          throw new Error(
+            "Kein Spotify-Gerät gefunden. Starte in der Spotify-App auf dem iPhone kurz einen Song und lass ihn laufen."
+          );
+        }
+        setDeviceId(dev);
+      }
 
-      // Kein Geraet ODER kein bekannter freier Titel -> Kontext anspielen und
-      // dabei die Warteschlange lernen (das ist der einzige Moment, in dem wir
-      // im Playlist-Kontext sind und die Queue Playlist-Titel liefert).
+      // 2. Bekannten, freien Titel direkt spielen (kein Anspielen, kein Umspringen).
+      let cand = pickCandidate();
+
+      // 3. Noch nichts bekannt (erste Begegnung mit der Playlist) -> Kontext
+      //    anspielen und die Warteschlange lernen.
       if (!cand) {
         const prevId = (await getCurrentlyPlaying())?.id ?? null; // ggf. Begruessungssong
         dev = await startPlaylist(playlistId);
         setDeviceId(dev);
         const np = await waitForContextTrack(prevId);
-        await learnFromQueue(); // kommende Titel fuer Folgerunden lernen
+        await learnFromQueue();
         if (np?.id && np.id !== AMBIENT_ID && !played.has(np.id)) {
-          // Kontext-Song laeuft schon -> direkt als Rundensong nehmen (kein Umspringen).
           lockRound({
             id: np.id,
             uri: "",
@@ -183,15 +194,14 @@ export function Game({
         cand = pickCandidate();
       }
 
-      // Bekannten freien Titel zuverlaessig als Einzel-Track spielen.
       if (cand) {
-        await playTrack(cand.uri, dev!);
+        await playTrack(cand.uri, dev);
         lockRound(cand);
         return;
       }
 
       // Letzter Notnagel: alte Skip-Methode.
-      if (dev && !(await skipFallback(dev))) {
+      if (!(await skipFallback(dev))) {
         setMsg("Alle Songs dieser Playlist wurden gespielt. 🎉");
         setPhase("idle");
       }
