@@ -224,6 +224,22 @@ export async function getCurrentlyPlaying(): Promise<NowPlaying | null> {
   };
 }
 
+// Spotify-User-ID des eingeloggten Kontos. Dient dazu, Spielgruppen pro Person
+// zuzuordnen (jede/r sieht nur die eigenen Gruppen), auch bei einer gemeinsamen
+// Datenbank. Im Speicher gecacht; nach einem Login-Redirect (Reload) wird sie
+// automatisch neu geholt und ist damit immer die des aktuellen Kontos.
+let cachedUserId: string | null = null;
+export async function getCurrentUserId(): Promise<string | null> {
+  if (cachedUserId) return cachedUserId;
+  try {
+    const data = await api<{ id?: string } | undefined>("/me");
+    cachedUserId = data?.id ?? null;
+    return cachedUserId;
+  } catch {
+    return null;
+  }
+}
+
 // ISRC eines einzelnen Titels holen. Der Einzeltitel-Endpoint /tracks/{id}
 // liefert external_ids.isrc zuverlaessig und ist – anders als die
 // Playlist-Endpoints – im Dev-Mode nicht gesperrt. Wird genutzt, um die ISRC

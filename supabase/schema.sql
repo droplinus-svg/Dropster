@@ -2,11 +2,20 @@
 -- Im Supabase SQL Editor ausfuehren (New query -> einfuegen -> Run).
 
 -- Eine wiederkehrende Gruppe / benannte Spielrunde.
+-- "owner"    = Spotify-User-ID der Person, der die Gruppe gehoert. Danach wird
+--              gefiltert, damit bei EINER gemeinsamen Datenbank jede/r nur die
+--              eigenen Gruppen sieht.
+-- "instance" = auf welchem Link/App die Gruppe entstand (nur informativ).
 create table if not exists spielrunde (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
+  owner       text,
+  instance    text,
   created_at  timestamptz not null default now()
 );
+alter table spielrunde add column if not exists owner text;
+alter table spielrunde add column if not exists instance text;
+create index if not exists idx_spielrunde_owner on spielrunde(owner);
 
 -- Songs, die eine Spielrunde schon gespielt hat -> dauerhaft gesperrt.
 create table if not exists burned_song (
