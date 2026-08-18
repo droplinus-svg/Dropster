@@ -1,0 +1,27 @@
+name: Supabase Keep-Alive
+
+# Haelt die kostenlose Supabase-Datenbank wach: schickt taeglich eine winzige
+# Leseanfrage, damit das Projekt nicht wegen Inaktivitaet pausiert wird.
+# (Supabase pausiert Free-Projekte erst nach ~7 Tagen ganz ohne Aktivitaet.)
+
+on:
+  schedule:
+    - cron: "17 6 * * *"   # taeglich 06:17 UTC
+  workflow_dispatch: {}      # zusaetzlich manuell ausloesbar (Button in GitHub)
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "$SUPABASE_URL/rest/v1/spielrunde?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+          echo "Supabase antwortete mit HTTP $code"
+          # 200 = ok. Alles andere als Fehler werten, damit der Lauf rot wird.
+          test "$code" = "200"
