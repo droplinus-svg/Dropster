@@ -7,7 +7,6 @@ import { Welcome } from "./pages/Welcome";
 import { GroupSelect } from "./pages/GroupSelect";
 import { PlaylistSelect } from "./pages/PlaylistSelect";
 import { Game } from "./pages/Game";
-import { Info } from "./pages/Info";
 import { Onboarding } from "./pages/Onboarding";
 
 const ONBOARD_KEY = "dropster.onboarded";
@@ -26,7 +25,6 @@ export function App() {
   const [playlistId, setPlaylistId] = useState("");
   const [playlistName, setPlaylistName] = useState("");
   const [spielrunde, setSpielrunde] = useState<Spielrunde | null>(null);
-  const [showInfo, setShowInfo] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   // Beim allerersten Start die Einführung zeigen (einmalig pro Gerät).
@@ -82,16 +80,7 @@ export function App() {
           i
         </button>
       )}
-      {showOnboarding && (
-        <Onboarding
-          onClose={closeOnboarding}
-          onDetails={() => {
-            closeOnboarding();
-            setShowInfo(true);
-          }}
-        />
-      )}
-      {showInfo && <Info onClose={() => setShowInfo(false)} />}
+      {showOnboarding && <Onboarding onClose={closeOnboarding} />}
 
       {screen !== "login" && screen !== "loading" && (
         <header className="topbar">

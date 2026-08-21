@@ -34,6 +34,11 @@ export function PlaylistSelect({
           die zum Spielen passt. Tipp: eine <strong>bunt gemischte</strong> Liste
           über viele Jahrzehnte macht am meisten Spaß.
         </p>
+        <p className="muted">
+          <strong>Insider-Tipp:</strong> Die offiziellen{" "}
+          <strong>Hitster-Playlists</strong> gibt es auch auf Spotify. Füg eine
+          davon deinem Konto hinzu – dann spielt ihr mit exakt denselben Songs.
+        </p>
         {loading && <p className="muted">Lade Playlists …</p>}
         {msg && <p className="muted">{msg}</p>}
         <div className="stack">

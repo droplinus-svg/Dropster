@@ -17,7 +17,7 @@ const SLIDES: Slide[] = [
     kicker: "Die Idee",
     title: "Hitster – ohne die Karten",
     body:
-      "Dropster spielt sich wie <b>Hitster</b>, nur ohne das feste Kartendeck. Die App spielt einen Song ab – <b>Titel, Interpret und Jahr noch geheim</b>. Ihr ratet Titel und Interpret und sortiert den Song nach seinem <span class='g'>Erscheinungsjahr</span> in eure Zeitreihe.",
+      "Dropster spielt sich wie <b>Hitster</b> – nur <b>ohne die Spielkarten von Hitster</b>. Die App spielt einen Song ab – <b>Titel, Interpret und Jahr noch geheim</b>. Ihr ratet Titel und Interpret und sortiert den Song nach seinem <span class='g'>Erscheinungsjahr</span> in eure Zeitreihe.",
     art: `<svg viewBox="0 0 300 230" fill="none" aria-hidden="true">
       <rect x="150" y="34" width="110" height="150" rx="12" transform="rotate(9 150 34)" fill="#20252e" stroke="#39414d"/>
       <rect x="70" y="30" width="110" height="150" rx="12" transform="rotate(-7 70 30)" fill="#242a34" stroke="#3c4653"/>
@@ -46,30 +46,6 @@ const SLIDES: Slide[] = [
     </svg>`,
   },
   {
-    kicker: "Playlist",
-    title: "Wähle eine deiner Playlists",
-    body:
-      "Du spielst mit <b>deinen eigenen Spotify-Playlists</b> – Dropster zeigt sie dir zur Auswahl.",
-    tip: "💡 Tipp: Nimm eine <b>bunt gemischte</b> Liste über viele Jahrzehnte. Eine reine 80er-Liste macht das Jahr-Raten langweilig.",
-    art: `<svg viewBox="0 0 300 230" fill="none" aria-hidden="true">
-      <rect x="60" y="34" width="180" height="162" rx="14" fill="#171a21" stroke="#2b313c"/>
-      <g font-family="sans-serif">
-        <rect x="74" y="50" width="20" height="20" rx="5" fill="#1db954"/>
-        <rect x="104" y="54" width="86" height="7" rx="3.5" fill="#3a424e"/>
-        <rect x="200" y="52" width="26" height="12" rx="6" fill="#20252e"/><text x="213" y="61" text-anchor="middle" fill="#8b96a4" font-size="8">1975</text>
-        <rect x="74" y="84" width="20" height="20" rx="5" fill="#2a3038"/>
-        <rect x="104" y="88" width="70" height="7" rx="3.5" fill="#3a424e"/>
-        <rect x="200" y="86" width="26" height="12" rx="6" fill="#20252e"/><text x="213" y="95" text-anchor="middle" fill="#8b96a4" font-size="8">1994</text>
-        <rect x="74" y="118" width="20" height="20" rx="5" fill="#2a3038"/>
-        <rect x="104" y="122" width="80" height="7" rx="3.5" fill="#3a424e"/>
-        <rect x="200" y="120" width="26" height="12" rx="6" fill="#20252e"/><text x="213" y="129" text-anchor="middle" fill="#8b96a4" font-size="8">2008</text>
-        <rect x="74" y="152" width="20" height="20" rx="5" fill="#2a3038"/>
-        <rect x="104" y="156" width="60" height="7" rx="3.5" fill="#3a424e"/>
-        <rect x="200" y="154" width="26" height="12" rx="6" fill="#20252e"/><text x="213" y="163" text-anchor="middle" fill="#8b96a4" font-size="8">2020</text>
-      </g>
-    </svg>`,
-  },
-  {
     kicker: "Einmal verbinden",
     title: "Kurz Spotify antippen",
     body:
@@ -89,6 +65,30 @@ const SLIDES: Slide[] = [
       <path d="M134 100 q16 -18 32 0" stroke="#1db954" stroke-width="3" fill="none" stroke-linecap="round"/>
       <path d="M166 100 l-9 -3 3 10z" fill="#1db954"/>
       <text x="150" y="150" text-anchor="middle" fill="#8b96a4" font-size="11" font-family="sans-serif">sofort zurück</text>
+    </svg>`,
+  },
+  {
+    kicker: "Playlist",
+    title: "Wähle eine deiner Playlists",
+    body:
+      "Du spielst mit <b>deinen eigenen Spotify-Playlists</b> – Dropster zeigt sie dir zur Auswahl.",
+    tip: "💡 Nimm eine <b>bunt gemischte</b> Liste über viele Jahrzehnte – eine reine 80er-Liste macht das Jahr-Raten langweilig.<br><br><b>Insider-Tipp:</b> Die offiziellen <b>Hitster-Playlists</b> gibt es auch auf Spotify. Füg eine davon deinem Konto hinzu – dann spielt ihr mit exakt denselben Songs.",
+    art: `<svg viewBox="0 0 300 230" fill="none" aria-hidden="true">
+      <rect x="60" y="34" width="180" height="162" rx="14" fill="#171a21" stroke="#2b313c"/>
+      <g font-family="sans-serif">
+        <rect x="74" y="50" width="20" height="20" rx="5" fill="#1db954"/>
+        <rect x="104" y="54" width="86" height="7" rx="3.5" fill="#3a424e"/>
+        <rect x="200" y="52" width="26" height="12" rx="6" fill="#20252e"/><text x="213" y="61" text-anchor="middle" fill="#8b96a4" font-size="8">1975</text>
+        <rect x="74" y="84" width="20" height="20" rx="5" fill="#2a3038"/>
+        <rect x="104" y="88" width="70" height="7" rx="3.5" fill="#3a424e"/>
+        <rect x="200" y="86" width="26" height="12" rx="6" fill="#20252e"/><text x="213" y="95" text-anchor="middle" fill="#8b96a4" font-size="8">1994</text>
+        <rect x="74" y="118" width="20" height="20" rx="5" fill="#2a3038"/>
+        <rect x="104" y="122" width="80" height="7" rx="3.5" fill="#3a424e"/>
+        <rect x="200" y="120" width="26" height="12" rx="6" fill="#20252e"/><text x="213" y="129" text-anchor="middle" fill="#8b96a4" font-size="8">2008</text>
+        <rect x="74" y="152" width="20" height="20" rx="5" fill="#2a3038"/>
+        <rect x="104" y="156" width="60" height="7" rx="3.5" fill="#3a424e"/>
+        <rect x="200" y="154" width="26" height="12" rx="6" fill="#20252e"/><text x="213" y="163" text-anchor="middle" fill="#8b96a4" font-size="8">2020</text>
+      </g>
     </svg>`,
   },
   {
@@ -132,15 +132,17 @@ const SLIDES: Slide[] = [
       "Wer die Platzierung für <b>falsch</b> hält, ruft <b>„Hitster!“</b> und legt seinen <b>Chip</b> an die Stelle, wo <b>er</b> den Song vermutet – noch <b>bevor</b> das Jahr aufgedeckt wird.",
     tip: "Eingreifen darf nur, wer einen <b>Chip</b> hat – verdient durch richtiges Nennen von Titel &amp; Interpret.",
     art: `<svg viewBox="0 0 300 230" fill="none" aria-hidden="true">
-      <line x1="30" y1="154" x2="270" y2="154" stroke="#39414d" stroke-width="2"/>
-      <rect x="44" y="100" width="48" height="58" rx="7" transform="rotate(-4 44 100)" fill="#f3f0e6" stroke="#d8d3c2"/>
-      <text x="70" y="134" text-anchor="middle" fill="#3a3a3a" font-size="13" font-weight="bold" font-family="sans-serif" transform="rotate(-4 70 130)">1983</text>
-      <rect x="126" y="94" width="48" height="60" rx="7" fill="#e7f6ec" stroke="#1db954" stroke-dasharray="5 4"/>
-      <text x="150" y="130" text-anchor="middle" fill="#1db954" font-size="18" font-weight="bold" font-family="sans-serif">?</text>
-      <rect x="208" y="100" width="48" height="58" rx="7" transform="rotate(3 208 100)" fill="#f3f0e6" stroke="#d8d3c2"/>
-      <text x="234" y="134" text-anchor="middle" fill="#3a3a3a" font-size="13" font-weight="bold" font-family="sans-serif" transform="rotate(3 234 130)">2001</text>
-      <circle cx="112" cy="154" r="12" fill="#1db954" stroke="#0b5c29" stroke-width="2"/>
-      <circle cx="112" cy="154" r="4" fill="#0b5c29"/>
+      <line x1="24" y1="156" x2="276" y2="156" stroke="#39414d" stroke-width="2"/>
+      <rect x="30" y="102" width="44" height="56" rx="7" transform="rotate(-4 30 102)" fill="#f3f0e6" stroke="#d8d3c2"/>
+      <text x="52" y="134" text-anchor="middle" fill="#3a3a3a" font-size="12" font-weight="bold" font-family="sans-serif" transform="rotate(-4 52 130)">1972</text>
+      <rect x="92" y="100" width="44" height="56" rx="7" transform="rotate(2 92 100)" fill="#f3f0e6" stroke="#d8d3c2"/>
+      <text x="114" y="132" text-anchor="middle" fill="#3a3a3a" font-size="12" font-weight="bold" font-family="sans-serif" transform="rotate(2 114 128)">1983</text>
+      <rect x="154" y="96" width="44" height="60" rx="7" fill="#e7f6ec" stroke="#1db954" stroke-dasharray="5 4"/>
+      <text x="176" y="131" text-anchor="middle" fill="#1db954" font-size="18" font-weight="bold" font-family="sans-serif">?</text>
+      <rect x="216" y="102" width="44" height="56" rx="7" transform="rotate(3 216 102)" fill="#f3f0e6" stroke="#d8d3c2"/>
+      <text x="238" y="134" text-anchor="middle" fill="#3a3a3a" font-size="12" font-weight="bold" font-family="sans-serif" transform="rotate(3 238 130)">2001</text>
+      <circle cx="83" cy="156" r="12" fill="#1db954" stroke="#0b5c29" stroke-width="2"/>
+      <circle cx="83" cy="156" r="4" fill="#0b5c29"/>
       <rect x="150" y="34" width="98" height="34" rx="11" fill="#20252e" stroke="#2b313c"/>
       <path d="M172 68 l0 12 13 -12 z" fill="#20252e"/>
       <text x="199" y="56" text-anchor="middle" fill="#1db954" font-size="15" font-weight="bold" font-family="sans-serif">Hitster!</text>
@@ -194,13 +196,7 @@ const SLIDES: Slide[] = [
   },
 ];
 
-export function Onboarding({
-  onClose,
-  onDetails,
-}: {
-  onClose: () => void;
-  onDetails: () => void;
-}) {
+export function Onboarding({ onClose }: { onClose: () => void }) {
   const [i, setI] = useState(0);
   const n = SLIDES.length;
   const trackRef = useRef<HTMLDivElement>(null);
@@ -322,11 +318,6 @@ export function Onboarding({
             {last ? "Los spielen" : "Weiter"}
           </button>
         </div>
-        {last && (
-          <button className="ob-details" onClick={onDetails}>
-            Ausführliche Spielregeln
-          </button>
-        )}
       </div>
     </div>
   );

@@ -349,7 +349,7 @@ export function Game({
               Ratet <span>Titel, Interpret &amp; Jahr</span>
             </p>
             <p className="play-hint">
-              Titel &amp; Interpret sagen · Zettel legen · dann auflösen
+              Sagt Titel &amp; Interpret – dann auflösen
             </p>
             <button className="big-solve" disabled={busy} onClick={reveal}>
               {busy ? "…" : "Titel & Interpret zeigen"}
@@ -400,7 +400,7 @@ export function Game({
               className="reveal-hint"
               style={{ visibility: phase === "meta" ? "visible" : "hidden" }}
             >
-              Jetzt Zettel legen &amp; „Hitster!“ rufen – dann das Jahr.
+              Erst Zettel legen · dann ggf. „Hitster!“ rufen · dann Jahr zeigen
             </p>
 
             {phase === "meta" ? (
