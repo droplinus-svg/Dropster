@@ -18,6 +18,27 @@
 const MB = "https://musicbrainz.org/ws/2";
 const UA = `Dropster/0.1 ( ${process.env.MUSICBRAINZ_CONTACT ?? "unknown"} )`;
 
+// Hartes Gesamt-Zeitbudget der Funktion. Netlify bricht Funktionen nach ~10 s
+// mit "504 Inactivity Timeout" ab. Wir bleiben klar darunter und antworten
+// notfalls VORHER mit dem Spotify-Jahr, statt in den 504 zu laufen.
+const BUDGET_MS = 8000;
+
+// fetch mit hartem Timeout, damit eine einzelne haengende Anfrage nicht das
+// ganze Budget frisst.
+async function fetchTimeout(
+  url: string,
+  opts: RequestInit,
+  ms: number
+): Promise<Response> {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), Math.max(500, ms));
+  try {
+    return await fetch(url, { ...opts, signal: ac.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 const SUPA_URL = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL;
 const SUPA_KEY =
   process.env.VITE_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY;
@@ -46,7 +67,7 @@ async function cacheRead(trackId: string): Promise<{
     `?select=resolved_year,source,confidence&track_id=eq.${encodeURIComponent(
       trackId
     )}&limit=1`;
-  const res = await fetch(url, { headers: supaHeaders() });
+  const res = await fetchTimeout(url, { headers: supaHeaders() }, 2500);
   if (!res.ok) return null;
   const rows = (await res.json()) as any[];
   return rows?.[0] ?? null;
@@ -55,14 +76,18 @@ async function cacheRead(trackId: string): Promise<{
 async function cacheWrite(row: Record<string, unknown>): Promise<void> {
   if (!SUPA_URL || !SUPA_KEY) return;
   // Upsert per PostgREST: Prefer merge-duplicates loest den Primary-Key-Konflikt.
-  await fetch(`${SUPA_URL}/rest/v1/year_cache`, {
-    method: "POST",
-    headers: {
-      ...supaHeaders(),
-      Prefer: "resolution=merge-duplicates,return=minimal",
+  await fetchTimeout(
+    `${SUPA_URL}/rest/v1/year_cache`,
+    {
+      method: "POST",
+      headers: {
+        ...supaHeaders(),
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify([row]),
     },
-    body: JSON.stringify([row]),
-  }).catch(() => {});
+    2500
+  ).catch(() => {});
 }
 
 // ---------- MusicBrainz ----------
@@ -70,14 +95,23 @@ async function cacheWrite(row: Record<string, unknown>): Promise<void> {
 // Bei 503 ("server busy") oder 429 (Rate-Limit) wird mit kurzer Pause
 // automatisch erneut versucht – das faengt die haeufigen, kurzlebigen
 // Ueberlastungen von MusicBrainz ab, ohne dass der Spieler etwas merkt.
-async function mb(path: string, tries = 0): Promise<any> {
-  const res = await fetch(`${MB}${path}`, {
-    headers: { "User-Agent": UA, Accept: "application/json" },
-  });
+async function mb(path: string, deadline: number, tries = 0): Promise<any> {
+  // Kein Budget mehr -> gar nicht erst anfragen.
+  if (Date.now() >= deadline) throw new Error("Zeitbudget erschöpft");
+  const remaining = deadline - Date.now();
+  const res = await fetchTimeout(
+    `${MB}${path}`,
+    { headers: { "User-Agent": UA, Accept: "application/json" } },
+    Math.min(4000, remaining)
+  );
   if (res.status === 404) return null;
-  if ((res.status === 503 || res.status === 429) && tries < 3) {
-    await sleep(1200 * (tries + 1)); // 1,2s / 2,4s / 3,6s
-    return mb(path, tries + 1);
+  if (res.status === 503 || res.status === 429) {
+    // Nur erneut versuchen, wenn noch genug Zeit ist (kurze feste Pause).
+    if (tries < 2 && deadline - Date.now() > 1500) {
+      await sleep(700);
+      return mb(path, deadline, tries + 1);
+    }
+    throw new Error(`MusicBrainz ${res.status} (überlastet)`);
   }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -93,10 +127,14 @@ interface Resolved {
   artistMbid: string | null;
 }
 
-async function resolveByIsrc(isrc: string): Promise<Resolved | null> {
+async function resolveByIsrc(
+  isrc: string,
+  deadline: number
+): Promise<Resolved | null> {
   // 1) ISRC -> Recording(s) inkl. Artist-Credit und Work-Beziehung.
   const data = await mb(
-    `/isrc/${encodeURIComponent(isrc)}?inc=artist-credits+work-rels&fmt=json`
+    `/isrc/${encodeURIComponent(isrc)}?inc=artist-credits+work-rels&fmt=json`,
+    deadline
   );
   const rec = data?.recordings?.[0];
   if (!rec) return null;
@@ -109,11 +147,15 @@ async function resolveByIsrc(isrc: string): Promise<Resolved | null> {
   const workMbid: string | null = workRel?.work?.id ?? null;
   const recDate = yearOf(rec["first-release-date"]);
 
-  // 2a) Work vorhanden -> fruehestes Release DESSELBEN Interpreten fuer dieses Work.
-  if (workMbid && artistMbid) {
-    await sleep(1100);
+  // 2a) Work vorhanden -> fruehestes Release DESSELBEN Interpreten fuer dieses
+  //     Work. Das ist die genauste, aber langsamste Stufe (zweite MB-Anfrage +
+  //     1s Rate-Limit-Pause). Nur gehen, wenn das Zeitbudget dafuer reicht –
+  //     sonst nehmen wir unten das Aufnahmedatum.
+  if (workMbid && artistMbid && deadline - Date.now() > 2800) {
+    await sleep(1000);
     const w = await mb(
-      `/recording?work=${workMbid}&inc=artist-credits&limit=100&fmt=json`
+      `/recording?work=${workMbid}&inc=artist-credits&limit=100&fmt=json`,
+      deadline
     );
     const sameArtist = (w?.recordings ?? []).filter((r: any) =>
       (r["artist-credit"] ?? []).some((ac: any) => ac.artist?.id === artistMbid)
@@ -180,11 +222,13 @@ export async function handler(event: { body: string | null }) {
       });
     }
 
-    // 3) MusicBrainz befragen.
+    // 3) MusicBrainz befragen – mit hartem Zeitbudget, damit wir NIE in
+    //    Netlifys 504-Timeout laufen.
+    const deadline = Date.now() + BUDGET_MS;
     let resolved: Resolved | null = null;
     let mbErr: string | null = null;
     try {
-      resolved = await resolveByIsrc(t.isrc);
+      resolved = await resolveByIsrc(t.isrc, deadline);
     } catch (e) {
       mbErr = (e as Error).message;
     }

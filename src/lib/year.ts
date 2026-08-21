@@ -60,6 +60,10 @@ export async function resolveYear(t: TrackInfo): Promise<YearResult> {
   }
 
   // 3) Netlify-Funktion (MusicBrainz + Cache-Schreiben nur bei Treffer).
+  //    Eigener Timeout, damit der Client nicht ewig wartet, falls der Server
+  //    doch einmal haengt. Die Funktion selbst antwortet in <= 8 s.
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 12000);
   try {
     const res = await fetch("/.netlify/functions/year", {
       method: "POST",
@@ -71,6 +75,7 @@ export async function resolveYear(t: TrackInfo): Promise<YearResult> {
         artist: t.artist,
         fallbackYear: fallback,
       }),
+      signal: ac.signal,
     });
     if (res.ok) {
       const j = (await res.json()) as Partial<YearResult>;
@@ -82,22 +87,31 @@ export async function resolveYear(t: TrackInfo): Promise<YearResult> {
         debug: j.debug,
       };
     }
-    // Funktion antwortet, aber mit Fehlerstatus (z. B. 500).
+    // Funktion antwortet, aber mit Fehlerstatus. 504 = Zeitueberschreitung des
+    // Servers -> verstaendliche Kurzmeldung statt der rohen HTML-Fehlerseite.
     const body = await res.text().catch(() => "");
+    const timeoutish =
+      res.status === 504 ||
+      res.status === 408 ||
+      /inactivity timeout|timeout/i.test(body);
     return {
       year: fallback,
       source: "spotify",
       confidence: "low",
       reason: "function_error",
-      debug: `HTTP ${res.status}: ${body.slice(0, 300)}`,
+      debug: timeoutish
+        ? "Zeitüberschreitung: MusicBrainz war zu langsam. Mit „Jahr erneut prüfen“ nochmal versuchen."
+        : `HTTP ${res.status}: ${body.slice(0, 160)}`,
     };
   } catch {
-    // Funktion gar nicht erreichbar (lokal/offline/404).
+    // Funktion nicht erreichbar oder eigener Timeout (abgebrochen).
     return {
       year: fallback,
       source: "spotify",
       confidence: "low",
       reason: isrc ? "server_unreachable" : "no_isrc",
     };
+  } finally {
+    clearTimeout(timer);
   }
 }
