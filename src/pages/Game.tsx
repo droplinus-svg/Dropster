@@ -7,7 +7,6 @@ import {
   pickBestDeviceId,
   playTrack,
   searchAmbientUri,
-  seekToStart,
   setVolume,
   skipNext,
   startPlaylist,
@@ -258,11 +257,6 @@ export function Game({
           // mit aehnlichen Songs (= Playlist zu Ende).
           if (allowExtRef.current) {
             if (np?.id && np.id !== AMBIENT_ID && !played.has(np.id)) {
-              try {
-                await seekToStart(dev);
-              } catch {
-                /* egal */
-              }
               await unmute(dev);
               lockRound(npToInfo(np), false);
               return;
@@ -273,13 +267,9 @@ export function Game({
             return;
           }
         } else if (np?.id && np.id !== AMBIENT_ID && !played.has(np.id)) {
-          // Frischer Titel aus UNSERER Playlist gefunden -> auf Anfang setzen,
-          // dann hörbar machen (startet garantiert bei 0:00).
-          try {
-            await seekToStart(dev);
-          } catch {
-            /* egal */
-          }
+          // Frischer Titel aus UNSERER Playlist gefunden -> hörbar machen.
+          // (Kein Zuruecksetzen auf 0:00 – das hoerbare "Zurueckspringen" war
+          // stoerender als die fehlende erste Sekunde.)
           await unmute(dev);
           lockRound(npToInfo(np), true);
           return;
@@ -500,36 +490,47 @@ export function Game({
             <div className="reveal-artist">{current.artist}</div>
 
             <div className="lbl">Erschienen</div>
-            <div className="reveal-year">
-              {phase === "year"
-                ? (yearInfo?.year ?? current.year ?? "—")
-                : "?"}
-            </div>
-            <span
-              className={"badge " + yearBadge.cls}
-              style={{ visibility: phase === "year" ? "visible" : "hidden" }}
-            >
-              {yearBadge.text}
-            </span>
-            {phase === "year" &&
-              yearInfo?.debug &&
-              yearInfo.source !== "musicbrainz" && (
-                <div className="year-debug">{yearInfo.debug}</div>
-              )}
-            {phase === "year" &&
-              yearInfo &&
-              yearInfo.source !== "musicbrainz" &&
-              ["mb_error", "function_error", "server_unreachable"].includes(
-                yearInfo.reason
-              ) && (
-                <button
-                  className="recheck-btn"
-                  disabled={recheck}
-                  onClick={recheckYear}
-                >
-                  {recheck ? "… wird geprüft" : "↻ Jahr erneut prüfen"}
-                </button>
-              )}
+            {phase !== "year" ? (
+              // Vor dem Aufloesen des Jahres: nur ein Platzhalter.
+              <div className="reveal-year">?</div>
+            ) : yearInfo ? (
+              // Jahr steht fest -> Zahl + Quelle zeigen.
+              <>
+                <div className="reveal-year">
+                  {yearInfo.year ?? current.year ?? "—"}
+                </div>
+                <span className={"badge " + yearBadge.cls}>
+                  {yearBadge.text}
+                </span>
+                {yearInfo.debug && yearInfo.source !== "musicbrainz" && (
+                  <div className="year-debug">{yearInfo.debug}</div>
+                )}
+                {yearInfo.source !== "musicbrainz" &&
+                  ["mb_error", "function_error", "server_unreachable"].includes(
+                    yearInfo.reason
+                  ) && (
+                    <button
+                      className="recheck-btn"
+                      disabled={recheck}
+                      onClick={recheckYear}
+                    >
+                      {recheck ? "… wird geprüft" : "↻ Jahr erneut prüfen"}
+                    </button>
+                  )}
+              </>
+            ) : (
+              // Noch am Pruefen -> KEINE vorlaeufige Zahl, sondern Ladeanzeige.
+              <div className="year-checking" aria-live="polite">
+                <div className="loading-eq small" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                </div>
+                <div className="year-checking-text">Jahr wird noch geprüft …</div>
+              </div>
+            )}
 
             <p
               className="reveal-hint"
