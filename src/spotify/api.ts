@@ -196,10 +196,12 @@ export interface NowPlaying {
   artists: string[];
   year: string | null;
   isrc: string | null;
+  contextUri: string | null;
 }
 
 // "Was laeuft gerade?" – so bekommen wir Titel/Interpret/Jahr, ohne die
-// Playlist auszulesen.
+// Playlist auszulesen. contextUri sagt uns, AUS WELCHER Playlist/Quelle der
+// Song stammt – damit erkennen wir, ob wirklich unsere Playlist laeuft.
 export async function getCurrentlyPlaying(): Promise<NowPlaying | null> {
   const data = await api<
     | {
@@ -210,6 +212,7 @@ export async function getCurrentlyPlaying(): Promise<NowPlaying | null> {
           album?: { release_date?: string };
           external_ids?: { isrc?: string };
         } | null;
+        context?: { uri?: string } | null;
       }
     | undefined
   >("/me/player/currently-playing");
@@ -221,6 +224,7 @@ export async function getCurrentlyPlaying(): Promise<NowPlaying | null> {
     artists: it.artists.map((a) => a.name),
     year: it.album?.release_date ? it.album.release_date.slice(0, 4) : null,
     isrc: it.external_ids?.isrc ?? null,
+    contextUri: data?.context?.uri ?? null,
   };
 }
 
@@ -411,34 +415,52 @@ export async function getPlaylistTracks(playlistId: string): Promise<Track[]> {
   return out;
 }
 
-// Nur die Track-IDs + Gesamtzahl der Playlist lesen (aus dem Playlist-Objekt,
-// das im Dev-Mode erlaubt ist). Damit erkennt das Spiel, wann ALLE echten
-// Playlist-Titel durchgespielt sind – ab dann haengt Spotify von selbst
-// aehnliche Songs an ("verlaengert" die Playlist). `total` ist die von Spotify
-// gemeldete Gesamtzahl; ist ids.length < total, war die Liste zu lang fuer eine
-// Seite (>100) und wir kennen nicht alle – dann verzichten wir aufs Ende-Signal.
-export async function getPlaylistTrackIds(
+// Die ECHTEN Titel der Playlist lesen – inkl. Abspiel-Adresse (uri) – aus dem
+// Playlist-Objekt (GET /playlists/{id}), das im Dev-Mode erlaubt ist. Damit
+// spielen wir gezielt einen Playlist-Song ab, statt Spotify raten zu lassen,
+// was gerade laeuft (das konnte sonst ein fremder Weck-Song sein!). `total` ist
+// die von Spotify gemeldete Gesamtzahl; ist members.length < total, war die
+// Liste zu lang fuer eine Seite (>100) und wir kennen nicht alle.
+export async function getPlaylistMembers(
   playlistId: string
-): Promise<{ ids: string[]; total: number }> {
+): Promise<{ members: TrackInfo[]; total: number }> {
   const data = await api<{
     tracks?: {
       total?: number;
-      items?: { track: { uri?: string; id?: string; is_local?: boolean } | null }[];
+      items?: {
+        track: {
+          id?: string;
+          uri?: string;
+          name?: string;
+          is_local?: boolean;
+          is_playable?: boolean;
+          artists?: { name: string }[];
+          album?: { release_date?: string };
+          external_ids?: { isrc?: string };
+        } | null;
+      }[];
     };
   }>(`/playlists/${playlistId}`);
   const items = data.tracks?.items ?? [];
-  const ids: string[] = [];
+  const members: TrackInfo[] = [];
   for (const it of items) {
     const t = it.track;
     if (!t || t.is_local) continue;
-    const id =
-      t.id ??
-      (t.uri && t.uri.startsWith("spotify:track:")
-        ? (t.uri.split(":").pop() as string)
-        : null);
-    if (id) ids.push(id);
+    if (!t.uri || !t.uri.startsWith("spotify:track:")) continue;
+    if (t.is_playable === false) continue; // im Land nicht abspielbar -> raus
+    const id = t.id ?? (t.uri.split(":").pop() as string);
+    members.push({
+      id,
+      uri: t.uri,
+      title: t.name ?? "",
+      artist: (t.artists ?? []).map((a) => a.name).join(", "),
+      year: t.album?.release_date
+        ? String(t.album.release_date).slice(0, 4)
+        : null,
+      isrc: t.external_ids?.isrc ?? null,
+    });
   }
-  return { ids, total: data.tracks?.total ?? ids.length };
+  return { members, total: data.tracks?.total ?? members.length };
 }
 
 interface RawTrack {

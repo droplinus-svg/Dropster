@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   getCurrentlyPlaying,
   getPlaybackVolume,
-  getPlaylistTrackIds,
+  getPlaylistMembers,
   getQueue,
   pausePlayback,
   pickBestDeviceId,
@@ -92,14 +92,23 @@ export function Game({
         /* ohne Vorwissen weiter */
       }
       try {
-        const { ids, total } = await getPlaylistTrackIds(playlistId);
-        playlistIdsRef.current = new Set(ids);
-        // Vollstaendig, wenn wir mindestens so viele IDs wie die gemeldete
+        const { members, total } = await getPlaylistMembers(playlistId);
+        // Die echten Playlist-Songs sind ab jetzt die primaere Quelle fuer die
+        // Wiedergabe – MIT ihren Abspiel-Adressen. So spielen wir immer einen
+        // Song DIESER Playlist, nie einen fremden Weck-Song.
+        members.forEach((t) => {
+          if (!knownRef.current.has(t.id) || knownRef.current.get(t.id)?.uri === "")
+            knownRef.current.set(t.id, t);
+          playlistIdsRef.current.add(t.id);
+        });
+        // Vollstaendig, wenn wir mindestens so viele Titel wie die gemeldete
         // Gesamtzahl haben (Spotify liefert max. ~100 pro Seite).
-        playlistCompleteRef.current = ids.length >= total && total > 0;
-        setPlaylistTotal(playlistCompleteRef.current ? ids.length : total);
+        playlistCompleteRef.current = members.length >= total && total > 0;
+        setPlaylistTotal(
+          playlistCompleteRef.current ? members.length : total
+        );
       } catch {
-        /* Ende-Erkennung nicht moeglich – Spiel laeuft wie bisher weiter */
+        /* Playlist-Titel nicht direkt lesbar – Fallback: Warteschlange lernen */
       }
     })();
   }, [spielrundeId, playlistId]);
@@ -185,7 +194,7 @@ export function Game({
       const np = await getCurrentlyPlaying();
       const id = np?.id;
       if (!id || id === AMBIENT_ID || id === lastSkipped) continue;
-      if (!played.has(id)) {
+      if (!played.has(id) && isFromOurPlaylist(np)) {
         lockRound({
           id,
           uri: "",
@@ -246,15 +255,39 @@ export function Game({
     };
   }, [phase, current?.id, deviceId]);
 
-  // Warten, bis nach dem Kontext-Start wirklich ein NEUER Titel laeuft
-  // (nicht mehr der Begruessungssong).
+  // Warten, bis nach dem Kontext-Start wirklich ein Titel AUS UNSERER Playlist
+  // laeuft – nicht mehr der fremde Weck-/Begruessungssong. Wir pruefen dazu den
+  // context-uri, den Spotify mitliefert. Erst wenn er auf unsere Playlist zeigt,
+  // ist der Titel garantiert ein Playlist-Song.
   async function waitForContextTrack(prevId: string | null) {
-    for (let i = 0; i < 12; i++) {
+    const wantCtx = `spotify:playlist:${playlistId}`;
+    let last: Awaited<ReturnType<typeof getCurrentlyPlaying>> = null;
+    for (let i = 0; i < 16; i++) {
       await sleep(350);
       const np = await getCurrentlyPlaying();
-      if (np?.id && np.id !== prevId && np.id !== AMBIENT_ID) return np;
+      if (!np?.id || np.id === AMBIENT_ID) continue;
+      last = np;
+      // Bester Fall: Spotify meldet unsere Playlist als Kontext.
+      if (np.contextUri === wantCtx) return np;
+      // Zweitbester Fall: bekannter Playlist-Titel (aus getPlaylistMembers).
+      if (playlistIdsRef.current.has(np.id)) return np;
+      // Sonst weiter warten (der fremde Song laeuft evtl. noch nach).
+      if (np.id !== prevId && playlistIdsRef.current.size === 0 && !np.contextUri)
+        return np; // kein Kontext-Feld verfuegbar -> Notnagel wie bisher
     }
-    return await getCurrentlyPlaying();
+    return last;
+  }
+
+  // Gehoert dieser gerade laufende Titel sicher zu unserer Playlist?
+  function isFromOurPlaylist(
+    np: Awaited<ReturnType<typeof getCurrentlyPlaying>>
+  ): boolean {
+    if (!np?.id) return false;
+    if (np.contextUri === `spotify:playlist:${playlistId}`) return true;
+    if (playlistIdsRef.current.has(np.id)) return true;
+    // Kennen wir gar keine Playlist-Infos UND keinen Kontext, koennen wir es
+    // nicht ausschliessen – dann als Notnagel akzeptieren.
+    return playlistIdsRef.current.size === 0 && !np.contextUri;
   }
 
   async function playRound() {
@@ -321,9 +354,15 @@ export function Game({
         const np = await waitForContextTrack(prevId);
         await learnFromQueue();
         cand = pickCandidate();
-        if (!cand && np?.id && np.id !== AMBIENT_ID && !played.has(np.id)) {
+        if (
+          !cand &&
+          np?.id &&
+          np.id !== AMBIENT_ID &&
+          !played.has(np.id) &&
+          isFromOurPlaylist(np)
+        ) {
           // Keine URIs bekannt -> den gerade (noch stummen) Kontext-Titel
-          // nehmen und wieder hoerbar machen.
+          // nehmen, ABER nur wenn er sicher aus UNSERER Playlist stammt.
           await unmute(dev);
           lockRound({
             id: np.id,
@@ -333,6 +372,16 @@ export function Game({
             year: np.year,
             isrc: np.isrc,
           });
+          return;
+        }
+        // Kontext ist (noch) nicht unsere Playlist -> lieber nichts Fremdes
+        // spielen. Lautstaerke zurueck und freundlich um erneuten Tipp bitten.
+        if (!cand) {
+          await unmute(dev);
+          setMsg(
+            "Spotify hat die Playlist noch nicht übernommen. Tippt bitte gleich noch einmal auf „Song abspielen“ – dann startet ein Titel aus dieser Playlist."
+          );
+          setPhase("idle");
           return;
         }
       }
