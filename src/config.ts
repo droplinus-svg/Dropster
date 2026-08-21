@@ -1,3 +1,9 @@
+// Eindeutige Build-Kennung (von Vite zur Build-Zeit ersetzt). Fuer
+// Auto-Update-Erkennung und das erneute Zeigen des Onboardings nach Updates.
+declare const __BUILD_ID__: string;
+export const BUILD_ID: string =
+  typeof __BUILD_ID__ !== "undefined" ? __BUILD_ID__ : "dev";
+
 // Zentrale Konfiguration aus den Vite-Umgebungsvariablen.
 export const SPOTIFY_CLIENT_ID = import.meta.env.VITE_SPOTIFY_CLIENT_ID as string;
 export const SPOTIFY_REDIRECT_URI = import.meta.env

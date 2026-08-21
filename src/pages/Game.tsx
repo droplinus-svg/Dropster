@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import {
   getCurrentlyPlaying,
+  getPlaybackVolume,
   getQueue,
   pausePlayback,
   pickBestDeviceId,
   playTrack,
   searchAmbientUri,
+  setVolume,
   skipNext,
   startPlaylist,
   type TrackInfo,
@@ -153,6 +155,50 @@ export function Game({
     return false;
   }
 
+  // Wächter gegen Spotify-Autoplay: Läuft ein Song zu Ende, ohne dass jemand
+  // auflöst, springt Spotify von selbst auf „Radio“/einen fremden Titel weiter.
+  // Das lässt sich per Web-API nicht hart abschalten – wir fangen es ab: sobald
+  // ein FREMDER Titel läuft, still auf den Ambient-Track wechseln (hält die
+  // Verbindung) und einen Hinweis zeigen.
+  useEffect(() => {
+    if (phase !== "playing" || !current?.id || !deviceId) return;
+    let confirmed = false;
+    let stopped = false;
+    const dev = deviceId;
+    const lockedId = current.id;
+    const iv = setInterval(async () => {
+      if (stopped) return;
+      try {
+        const np = await getCurrentlyPlaying();
+        if (!np?.id) return;
+        if (np.id === lockedId) {
+          confirmed = true;
+          return;
+        }
+        if (np.id === AMBIENT_ID) return;
+        // Ein anderer Titel läuft, nachdem wir den richtigen schon einmal
+        // bestätigt hatten -> Autoplay ist übers Songende gesprungen.
+        if (confirmed) {
+          stopped = true;
+          try {
+            await playTrack(AMBIENT_URI, dev);
+          } catch {
+            /* egal */
+          }
+          setMsg(
+            "Der Song war zu Ende – tippt auf „Titel & Interpret zeigen“, um aufzulösen."
+          );
+        }
+      } catch {
+        /* Netzwerk-Aussetzer ignorieren */
+      }
+    }, 4000);
+    return () => {
+      stopped = true;
+      clearInterval(iv);
+    };
+  }, [phase, current?.id, deviceId]);
+
   // Warten, bis nach dem Kontext-Start wirklich ein NEUER Titel laeuft
   // (nicht mehr der Begruessungssong).
   async function waitForContextTrack(prevId: string | null) {
@@ -167,6 +213,21 @@ export function Game({
   async function playRound() {
     setMsg("");
     setBusy(true);
+    // Merker fuer das stumme Anlernen: Solange muted !== null ist, haben wir
+    // die Lautstaerke auf 0 gesetzt und muessen sie wieder herstellen, bevor
+    // der eigentliche Rundensong hoerbar wird.
+    let muted: string | null = null;
+    let prevVol = 100;
+    async function unmute(dev: string) {
+      if (muted) {
+        try {
+          await setVolume(prevVol, dev);
+        } catch {
+          /* egal */
+        }
+        muted = null;
+      }
+    }
     try {
       // 1. Geraet sicherstellen – OHNE etwas abzuspielen.
       let dev = deviceId;
@@ -180,18 +241,36 @@ export function Game({
         setDeviceId(dev);
       }
 
+      // Warteschlange bei JEDER Runde nachlernen (nur lesen, spielt nichts ab).
+      // So gehen uns die bekannten Titel nicht aus – und wir landen seltener
+      // auf den hoerbaren Notnagel-Pfaden, die mehrere Songs anspielen.
+      await learnFromQueue();
+
       // 2. Bekannten, freien Titel direkt spielen (kein Anspielen, kein Umspringen).
       let cand = pickCandidate();
 
-      // 3. Noch nichts bekannt (erste Begegnung mit der Playlist) -> Kontext
-      //    anspielen und die Warteschlange lernen.
+      // 3. Noch nichts bekannt (erste Begegnung) ODER Vorrat erschoepft ->
+      //    Kontext STUMM anspielen, Warteschlange lernen, dann genau EINEN
+      //    Titel hoerbar starten. Dank Stummschaltung hoert man das Anlernen
+      //    nicht mehr als „mehrere Songs“.
       if (!cand) {
-        const prevId = (await getCurrentlyPlaying())?.id ?? null; // ggf. Begruessungssong
+        prevVol = (await getPlaybackVolume()) ?? 100;
+        muted = dev;
+        try {
+          await setVolume(0, dev);
+        } catch {
+          /* egal */
+        }
+        const prevId = (await getCurrentlyPlaying())?.id ?? null;
         dev = await startPlaylist(playlistId);
         setDeviceId(dev);
         const np = await waitForContextTrack(prevId);
         await learnFromQueue();
-        if (np?.id && np.id !== AMBIENT_ID && !played.has(np.id)) {
+        cand = pickCandidate();
+        if (!cand && np?.id && np.id !== AMBIENT_ID && !played.has(np.id)) {
+          // Keine URIs bekannt -> den gerade (noch stummen) Kontext-Titel
+          // nehmen und wieder hoerbar machen.
+          await unmute(dev);
           lockRound({
             id: np.id,
             uri: "",
@@ -202,21 +281,42 @@ export function Game({
           });
           return;
         }
-        cand = pickCandidate();
       }
 
       if (cand) {
         await playTrack(cand.uri, dev);
+        await unmute(dev);
         lockRound(cand);
         return;
       }
 
-      // Letzter Notnagel: alte Skip-Methode.
-      if (!(await skipFallback(dev))) {
+      // Allerletzter Notnagel: alte Skip-Methode – aber STUMM, damit nichts
+      // hoerbar durchlaeuft. Danach Lautstaerke wiederherstellen.
+      if (!muted) {
+        prevVol = (await getPlaybackVolume()) ?? 100;
+        muted = dev;
+        try {
+          await setVolume(0, dev);
+        } catch {
+          /* egal */
+        }
+      }
+      const found = await skipFallback(dev);
+      await unmute(dev);
+      if (!found) {
         setMsg("Alle Songs dieser Playlist wurden gespielt. 🎉");
         setPhase("idle");
       }
     } catch (e) {
+      // Falls wir mittendrin stummgeschaltet haben: Lautstaerke zuruecksetzen.
+      if (muted) {
+        try {
+          await setVolume(prevVol, muted);
+        } catch {
+          /* egal */
+        }
+        muted = null;
+      }
       const m = (e as Error).message;
       if (isDeviceError(m)) {
         setDeviceId(null);

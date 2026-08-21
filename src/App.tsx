@@ -8,8 +8,13 @@ import { GroupSelect } from "./pages/GroupSelect";
 import { PlaylistSelect } from "./pages/PlaylistSelect";
 import { Game } from "./pages/Game";
 import { Onboarding } from "./pages/Onboarding";
+import { Splash } from "./pages/Splash";
+import { isUpdateAvailable } from "./lib/update";
+import { BUILD_ID } from "./config";
 
-const ONBOARD_KEY = "dropster.onboarded";
+// Speichert, für WELCHE Version das Onboarding schon gesehen wurde. So wird
+// die Einführung nach jedem Update automatisch wieder gezeigt.
+const ONBOARD_KEY = "dropster.onboardedVersion";
 
 type Screen =
   | "loading"
@@ -26,20 +31,44 @@ export function App() {
   const [playlistName, setPlaylistName] = useState("");
   const [spielrunde, setSpielrunde] = useState<Spielrunde | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  // Der inszenierte Startbildschirm läuft bei JEDEM Öffnen der App.
+  const [showSplash, setShowSplash] = useState(true);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
 
-  // Beim allerersten Start die Einführung zeigen (einmalig pro Gerät).
+  // Einführung zeigen, wenn sie für DIESE Version noch nicht gesehen wurde –
+  // also beim allerersten Start UND nach jedem Update.
   useEffect(() => {
     try {
-      if (!localStorage.getItem(ONBOARD_KEY)) setShowOnboarding(true);
+      if (localStorage.getItem(ONBOARD_KEY) !== BUILD_ID) setShowOnboarding(true);
     } catch {
       /* localStorage nicht verfügbar – ohne Einführung weiter */
     }
   }, []);
 
+  // Prüfen, ob auf Netlify eine neuere Version liegt: beim Start und jedes Mal,
+  // wenn die App wieder in den Vordergrund kommt (iPhone hält Tabs "warm").
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      if (await isUpdateAvailable()) {
+        if (!cancelled) setUpdateAvailable(true);
+      }
+    }
+    check();
+    function onVisible() {
+      if (document.visibilityState === "visible") check();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
   function closeOnboarding() {
     setShowOnboarding(false);
     try {
-      localStorage.setItem(ONBOARD_KEY, "1");
+      localStorage.setItem(ONBOARD_KEY, BUILD_ID);
     } catch {
       /* egal */
     }
@@ -71,6 +100,15 @@ export function App() {
 
   return (
     <div className="app">
+      {showSplash && <Splash onDone={() => setShowSplash(false)} />}
+      {updateAvailable && !showSplash && (
+        <button
+          className="update-band"
+          onClick={() => window.location.reload()}
+        >
+          Neue Version verfügbar – tippen zum Aktualisieren
+        </button>
+      )}
       {screen !== "loading" && (
         <button
           className="info-btn"
