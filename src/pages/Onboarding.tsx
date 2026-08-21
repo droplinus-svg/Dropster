@@ -17,7 +17,7 @@ const SLIDES: Slide[] = [
     kicker: "Die Idee",
     title: "Hitster – ohne die Karten",
     body:
-      "Dropster spielt sich wie <b>Hitster</b> – nur <b>ohne die Spielkarten von Hitster</b>. Die App spielt einen Song ab – <b>Titel, Interpret und Jahr noch geheim</b>. Ihr ratet Titel und Interpret und sortiert den Song nach seinem <span class='g'>Erscheinungsjahr</span> in eure Zeitreihe.",
+      "Dropster spielt sich wie <b>Hitster</b> – nur <b>ohne die Spielkarten von Hitster</b>. Die App spielt einen Song ab, <b>ohne dass Titel, Interpret und Jahr angezeigt werden</b>. Ihr ratet Titel und Interpret und sortiert den Song nach seinem <span class='g'>Erscheinungsjahr</span> in eure Zeitreihe.",
     art: `<svg viewBox="0 0 300 230" fill="none" aria-hidden="true">
       <rect x="150" y="34" width="110" height="150" rx="12" transform="rotate(9 150 34)" fill="#20252e" stroke="#39414d"/>
       <rect x="70" y="30" width="110" height="150" rx="12" transform="rotate(-7 70 30)" fill="#242a34" stroke="#3c4653"/>

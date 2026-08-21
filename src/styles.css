@@ -835,3 +835,49 @@ select, input {
   background: #1c2028;
   color: var(--text);
 }
+
+/* ---- Ladeanzeige: nächster Song wird (stumm) vorbereitet ---- */
+.loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px 20px;
+  text-align: center;
+}
+.loading-eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 46px;
+}
+.loading-eq i {
+  display: block;
+  width: 8px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #35d76e, #1db954);
+  animation: loading-bounce 0.9s ease-in-out infinite;
+}
+.loading-eq i:nth-child(1) { height: 18px; animation-delay: 0s; }
+.loading-eq i:nth-child(2) { height: 40px; animation-delay: 0.12s; }
+.loading-eq i:nth-child(3) { height: 26px; animation-delay: 0.24s; }
+.loading-eq i:nth-child(4) { height: 44px; animation-delay: 0.36s; }
+.loading-eq i:nth-child(5) { height: 22px; animation-delay: 0.48s; }
+@keyframes loading-bounce {
+  0%, 100% { transform: scaleY(0.4); }
+  50% { transform: scaleY(1); }
+}
+.loading-title {
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--text);
+}
+.loading-sub {
+  font-size: 14px;
+  color: var(--muted);
+  max-width: 300px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-eq i { animation: none; }
+}

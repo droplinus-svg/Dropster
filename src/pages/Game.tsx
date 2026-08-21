@@ -3,19 +3,18 @@ import {
   getCurrentlyPlaying,
   getPlaybackVolume,
   getPlaylistMembers,
-  getQueue,
   pausePlayback,
   pickBestDeviceId,
   playTrack,
   searchAmbientUri,
+  seekToStart,
   setVolume,
   skipNext,
   startPlaylist,
+  type NowPlaying,
   type TrackInfo,
 } from "../spotify/api";
-import { supabaseConfigured } from "../lib/supabase";
 import { burnSong, loadBlacklist } from "../lib/groups";
-import { loadKnownTracks, recordTracks } from "../lib/tracks";
 import { resolveYear, type YearResult } from "../lib/year";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -32,6 +31,19 @@ function isDeviceError(m: string): boolean {
     s.includes("eingeschlafen") ||
     s.includes("no active")
   );
+}
+
+// "Was laeuft gerade?" -> unser internes Track-Format (ohne Abspiel-URI, die
+// brauchen wir nicht: wir bewegen uns immer im Playlist-Kontext).
+function npToInfo(np: NowPlaying): TrackInfo {
+  return {
+    id: np.id ?? "",
+    uri: "",
+    title: np.name,
+    artist: np.artists.join(", "),
+    year: np.year,
+    isrc: np.isrc,
+  };
 }
 
 export function Game({
@@ -56,6 +68,9 @@ export function Game({
   const [played, setPlayed] = useState<Set<string>>(new Set());
   const [round, setRound] = useState(0);
   const [busy, setBusy] = useState(false);
+  // Läuft gerade das (stumme) Vorbereiten des nächsten Songs? Dann zeigen wir
+  // ein klares Ladesignal, damit niemand ungeduldig mehrfach tippt.
+  const [preparing, setPreparing] = useState(false);
   const [recheck, setRecheck] = useState(false);
   const [msg, setMsg] = useState("");
   // Playlist komplett durchgespielt? Dann darf der/die Spielleiter/in
@@ -65,15 +80,11 @@ export function Game({
   // "weiterspielen" sofort den neuen Wert sieht (ohne Render-Verzoegerung).
   const allowExtRef = useRef(false);
 
-  // Bekannte Titel der Playlist (ueber die Warteschlange angelernt).
-  const knownRef = useRef<Map<string, TrackInfo>>(new Map());
-  // Die ECHTEN Track-IDs der gewaehlten Playlist (aus dem Playlist-Objekt).
-  // Damit wissen wir, wann alle Original-Titel dran waren – und welche Songs
-  // schon zu Spotifys Auto-Verlaengerung gehoeren.
-  const playlistIdsRef = useRef<Set<string>>(new Set());
-  // Kennen wir die VOLLSTAENDIGE Liste? (Nur dann ist das Ende-Signal sicher.)
-  const playlistCompleteRef = useRef<boolean>(false);
+  // Gemeldete Gesamtzahl der Playlist-Titel (auch im Dev-Mode zuverlaessig,
+  // selbst wenn Spotify die Titel-Details verbirgt). Fuer die Ende-Anzeige.
   const [playlistTotal, setPlaylistTotal] = useState(0);
+  // Wie viele ECHTE Playlist-Titel wurden schon gespielt (keine Erweiterungen)?
+  const playedMembersRef = useRef(0);
 
   useEffect(() => {
     (async () => {
@@ -86,95 +97,27 @@ export function Game({
         }
       }
       try {
-        const kt = await loadKnownTracks(playlistId);
-        kt.forEach((t) => knownRef.current.set(t.id, t));
+        const { total } = await getPlaylistMembers(playlistId);
+        if (total > 0) setPlaylistTotal(total);
       } catch {
-        /* ohne Vorwissen weiter */
-      }
-      try {
-        const { members, total } = await getPlaylistMembers(playlistId);
-        // Die echten Playlist-Songs sind ab jetzt die primaere Quelle fuer die
-        // Wiedergabe – MIT ihren Abspiel-Adressen. So spielen wir immer einen
-        // Song DIESER Playlist, nie einen fremden Weck-Song.
-        members.forEach((t) => {
-          if (!knownRef.current.has(t.id) || knownRef.current.get(t.id)?.uri === "")
-            knownRef.current.set(t.id, t);
-          playlistIdsRef.current.add(t.id);
-        });
-        // Vollstaendig, wenn wir mindestens so viele Titel wie die gemeldete
-        // Gesamtzahl haben (Spotify liefert max. ~100 pro Seite).
-        playlistCompleteRef.current = members.length >= total && total > 0;
-        setPlaylistTotal(
-          playlistCompleteRef.current ? members.length : total
-        );
-      } catch {
-        /* Playlist-Titel nicht direkt lesbar – Fallback: Warteschlange lernen */
+        /* Gesamtzahl unbekannt – Ende erkennen wir am Kontext-Wechsel */
       }
     })();
   }, [spielrundeId, playlistId]);
 
-  // Wie viele ECHTE Playlist-Titel (keine Auto-Verlaengerung) sind schon dran?
-  function playedPlaylistCount(): number {
-    let n = 0;
-    playlistIdsRef.current.forEach((id) => {
-      if (played.has(id)) n++;
-    });
-    return n;
-  }
-
   // Sind alle Original-Titel der Playlist durchgespielt?
   function playlistExhausted(): boolean {
-    const size = playlistIdsRef.current.size;
-    if (!playlistCompleteRef.current || size === 0) return false;
-    return playedPlaylistCount() >= size;
+    return playlistTotal > 0 && playedMembersRef.current >= playlistTotal;
   }
 
-  // Nur die KOMMENDEN Playlist-Titel merken (nicht den gerade laufenden – der
-  // koennte noch der Begruessungssong sein). Spielt nichts ab.
-  async function learnFromQueue(): Promise<void> {
-    try {
-      const q = await getQueue();
-      const fresh: TrackInfo[] = [];
-      q.upcoming.forEach((t) => {
-        if (t.id === AMBIENT_ID) return;
-        if (!knownRef.current.has(t.id)) {
-          knownRef.current.set(t.id, t);
-          fresh.push(t);
-        }
-      });
-      if (fresh.length && supabaseConfigured) {
-        recordTracks(playlistId, fresh).catch(() => {});
-      }
-    } catch {
-      /* Warteschlange nicht verfuegbar */
-    }
-  }
-
-  // Einen bekannten, noch nicht gesperrten Titel zufaellig waehlen. Solange die
-  // Original-Playlist laeuft, NUR echte Playlist-Titel – so rutschen wir nicht
-  // versehentlich in Spotifys Auto-Verlaengerung. Erst wenn der/die Spielleiter/in
-  // bewusst "weiterspielen" waehlt (allowExtensions), sind auch aehnliche Songs erlaubt.
-  function pickCandidate(): TrackInfo | null {
-    const restrict =
-      !allowExtRef.current && playlistIdsRef.current.size > 0;
-    const cands: TrackInfo[] = [];
-    knownRef.current.forEach((t) => {
-      if (t.id === AMBIENT_ID || played.has(t.id)) return;
-      if (restrict && !playlistIdsRef.current.has(t.id)) return;
-      cands.push(t);
-    });
-    if (!cands.length) return null;
-    return cands[Math.floor(Math.random() * cands.length)];
-  }
-
-  function lockRound(info: TrackInfo) {
+  // Einen Titel als aktuelle Runde festhalten. `isMember` = echter Playlist-Titel
+  // (nicht Spotifys Auto-Verlaengerung) -> zaehlt fuer die Ende-Erkennung.
+  function lockRound(info: TrackInfo, isMember: boolean) {
+    if (isMember && !played.has(info.id)) playedMembersRef.current += 1;
     setCurrent(info);
     setPlayed((p) => new Set(p).add(info.id));
     if (spielrundeId) {
       burnSong(spielrundeId, info.id, info.title, info.artist).catch(() => {});
-    }
-    if (supabaseConfigured && info.uri) {
-      recordTracks(playlistId, [info]).catch(() => {});
     }
     // Jahr im Hintergrund waehrend des Abspielens aufloesen, damit es beim
     // "Loesen" schon feststeht (MusicBrainz, danach aus dem Cache sofort).
@@ -186,36 +129,9 @@ export function Game({
     setPhase("playing");
   }
 
-  // Notnagel: alte Methode – zufaellig starten und gesperrte Songs ueberspringen.
-  async function skipFallback(dev: string): Promise<boolean> {
-    let lastSkipped: string | null = null;
-    for (let i = 0; i < 25; i++) {
-      await sleep(350);
-      const np = await getCurrentlyPlaying();
-      const id = np?.id;
-      if (!id || id === AMBIENT_ID || id === lastSkipped) continue;
-      if (!played.has(id) && isFromOurPlaylist(np)) {
-        lockRound({
-          id,
-          uri: "",
-          title: np!.name,
-          artist: np!.artists.join(", "),
-          year: np!.year,
-          isrc: np!.isrc,
-        });
-        return true;
-      }
-      lastSkipped = id;
-      await skipNext(dev);
-    }
-    return false;
-  }
-
   // Wächter gegen Spotify-Autoplay: Läuft ein Song zu Ende, ohne dass jemand
-  // auflöst, springt Spotify von selbst auf „Radio“/einen fremden Titel weiter.
-  // Das lässt sich per Web-API nicht hart abschalten – wir fangen es ab: sobald
-  // ein FREMDER Titel läuft, still auf den Ambient-Track wechseln (hält die
-  // Verbindung) und einen Hinweis zeigen.
+  // auflöst, springt Spotify von selbst weiter. Sobald ein ANDERER Titel läuft
+  // als der gerätselte, still auf den Ambient-Track wechseln und Hinweis zeigen.
   useEffect(() => {
     if (phase !== "playing" || !current?.id || !deviceId) return;
     let confirmed = false;
@@ -232,8 +148,6 @@ export function Game({
           return;
         }
         if (np.id === AMBIENT_ID) return;
-        // Ein anderer Titel läuft, nachdem wir den richtigen schon einmal
-        // bestätigt hatten -> Autoplay ist übers Songende gesprungen.
         if (confirmed) {
           stopped = true;
           try {
@@ -255,56 +169,34 @@ export function Game({
     };
   }, [phase, current?.id, deviceId]);
 
-  // Warten, bis nach dem Kontext-Start wirklich ein Titel AUS UNSERER Playlist
-  // laeuft – nicht mehr der fremde Weck-/Begruessungssong. Wir pruefen dazu den
-  // context-uri, den Spotify mitliefert. Erst wenn er auf unsere Playlist zeigt,
-  // ist der Titel garantiert ein Playlist-Song.
-  async function waitForContextTrack(prevId: string | null) {
-    const wantCtx = `spotify:playlist:${playlistId}`;
-    let last: Awaited<ReturnType<typeof getCurrentlyPlaying>> = null;
-    for (let i = 0; i < 16; i++) {
-      await sleep(350);
-      const np = await getCurrentlyPlaying();
-      if (!np?.id || np.id === AMBIENT_ID) continue;
-      last = np;
-      // Bester Fall: Spotify meldet unsere Playlist als Kontext.
-      if (np.contextUri === wantCtx) return np;
-      // Zweitbester Fall: bekannter Playlist-Titel (aus getPlaylistMembers).
-      if (playlistIdsRef.current.has(np.id)) return np;
-      // Sonst weiter warten (der fremde Song laeuft evtl. noch nach).
-      if (np.id !== prevId && playlistIdsRef.current.size === 0 && !np.contextUri)
-        return np; // kein Kontext-Feld verfuegbar -> Notnagel wie bisher
-    }
-    return last;
-  }
-
-  // Gehoert dieser gerade laufende Titel sicher zu unserer Playlist?
-  function isFromOurPlaylist(
-    np: Awaited<ReturnType<typeof getCurrentlyPlaying>>
-  ): boolean {
-    if (!np?.id) return false;
-    if (np.contextUri === `spotify:playlist:${playlistId}`) return true;
-    if (playlistIdsRef.current.has(np.id)) return true;
-    // Kennen wir gar keine Playlist-Infos UND keinen Kontext, koennen wir es
-    // nicht ausschliessen – dann als Notnagel akzeptieren.
-    return playlistIdsRef.current.size === 0 && !np.contextUri;
-  }
-
+  // Kernstueck: Der/die naechste Song. Wir spielen NIE einen einzelnen Titel per
+  // URI (das wuerde den Playlist-Kontext zerstoeren und Fremd-Songs einschleusen).
+  // Stattdessen bleiben wir IMMER im Playlist-Kontext und bewegen uns nur darin.
+  // So garantiert Spotify selbst, dass nur Titel DIESER Playlist kommen – erkennbar
+  // am contextUri, das Spotify mitliefert.
   async function playRound() {
     setMsg("");
-    // Sind alle Original-Titel dran und wir haben noch nicht bewusst auf
-    // "weiterspielen" getippt? Dann NICHT einfach weiterspielen, sondern
-    // sichtbar machen, dass die Playlist zu Ende ist.
+    // Alle Original-Titel dran und noch nicht bewusst "weiterspielen" getippt?
     if (playlistExhausted() && !allowExtRef.current) {
       setPlaylistDone(true);
       return;
     }
     setBusy(true);
-    // Merker fuer das stumme Anlernen: Solange muted !== null ist, haben wir
-    // die Lautstaerke auf 0 gesetzt und muessen sie wieder herstellen, bevor
-    // der eigentliche Rundensong hoerbar wird.
+    setPreparing(true);
+    const ours = `spotify:playlist:${playlistId}`;
     let muted: string | null = null;
     let prevVol = 100;
+    async function mute(dev: string) {
+      if (!muted) {
+        prevVol = (await getPlaybackVolume()) ?? 100;
+        muted = dev;
+        try {
+          await setVolume(0, dev);
+        } catch {
+          /* egal */
+        }
+      }
+    }
     async function unmute(dev: string) {
       if (muted) {
         try {
@@ -315,8 +207,8 @@ export function Game({
         muted = null;
       }
     }
+
     try {
-      // 1. Geraet sicherstellen – OHNE etwas abzuspielen.
       let dev = deviceId;
       if (!dev) {
         dev = await pickBestDeviceId();
@@ -328,90 +220,88 @@ export function Game({
         setDeviceId(dev);
       }
 
-      // Warteschlange bei JEDER Runde nachlernen (nur lesen, spielt nichts ab).
-      // So gehen uns die bekannten Titel nicht aus – und wir landen seltener
-      // auf den hoerbaren Notnagel-Pfaden, die mehrere Songs anspielen.
-      await learnFromQueue();
-
-      // 2. Bekannten, freien Titel direkt spielen (kein Anspielen, kein Umspringen).
-      let cand = pickCandidate();
-
-      // 3. Noch nichts bekannt (erste Begegnung) ODER Vorrat erschoepft ->
-      //    Kontext STUMM anspielen, Warteschlange lernen, dann genau EINEN
-      //    Titel hoerbar starten. Dank Stummschaltung hoert man das Anlernen
-      //    nicht mehr als „mehrere Songs“.
-      if (!cand) {
-        prevVol = (await getPlaybackVolume()) ?? 100;
-        muted = dev;
-        try {
-          await setVolume(0, dev);
-        } catch {
-          /* egal */
-        }
-        const prevId = (await getCurrentlyPlaying())?.id ?? null;
+      // 1. Sicherstellen, dass UNSERE Playlist als Kontext laeuft. Laeuft gerade
+      //    etwas anderes (fremder Weck-Song, Ambient, andere Playlist), starten
+      //    wir unsere Playlist STUMM und warten, bis Spotify sie uebernommen hat.
+      let np = await getCurrentlyPlaying();
+      if (np?.contextUri !== ours) {
+        await mute(dev);
         dev = await startPlaylist(playlistId);
         setDeviceId(dev);
-        const np = await waitForContextTrack(prevId);
-        await learnFromQueue();
-        cand = pickCandidate();
-        if (
-          !cand &&
-          np?.id &&
-          np.id !== AMBIENT_ID &&
-          !played.has(np.id) &&
-          isFromOurPlaylist(np)
-        ) {
-          // Keine URIs bekannt -> den gerade (noch stummen) Kontext-Titel
-          // nehmen, ABER nur wenn er sicher aus UNSERER Playlist stammt.
-          await unmute(dev);
-          lockRound({
-            id: np.id,
-            uri: "",
-            title: np.name,
-            artist: np.artists.join(", "),
-            year: np.year,
-            isrc: np.isrc,
-          });
-          return;
+        let switched = false;
+        for (let i = 0; i < 20; i++) {
+          await sleep(350);
+          np = await getCurrentlyPlaying();
+          if (np?.contextUri === ours) {
+            switched = true;
+            break;
+          }
         }
-        // Kontext ist (noch) nicht unsere Playlist -> lieber nichts Fremdes
-        // spielen. Lautstaerke zurueck und freundlich um erneuten Tipp bitten.
-        if (!cand) {
+        if (!switched) {
           await unmute(dev);
           setMsg(
-            "Spotify hat die Playlist noch nicht übernommen. Tippt bitte gleich noch einmal auf „Song abspielen“ – dann startet ein Titel aus dieser Playlist."
+            "Spotify hat die Playlist noch nicht übernommen. Öffnet kurz die Spotify-App, startet einen Song, kommt zurück und tippt erneut auf „Song abspielen“."
           );
           setPhase("idle");
           return;
         }
       }
 
-      if (cand) {
-        await playTrack(cand.uri, dev);
-        await unmute(dev);
-        lockRound(cand);
-        return;
+      // 2. Innerhalb unseres Kontexts zum naechsten noch nicht gespielten Titel
+      //    weiterschalten – STUMM, damit nichts hoerbar durchlaeuft.
+      for (let i = 0; i < 30; i++) {
+        np = await getCurrentlyPlaying();
+        const inOurs = np?.contextUri === ours;
+
+        if (!inOurs) {
+          // Kontext hat unsere Playlist verlassen -> Spotify verlaengert sie
+          // mit aehnlichen Songs (= Playlist zu Ende).
+          if (allowExtRef.current) {
+            if (np?.id && np.id !== AMBIENT_ID && !played.has(np.id)) {
+              try {
+                await seekToStart(dev);
+              } catch {
+                /* egal */
+              }
+              await unmute(dev);
+              lockRound(npToInfo(np), false);
+              return;
+            }
+          } else {
+            await unmute(dev);
+            setPlaylistDone(true);
+            return;
+          }
+        } else if (np?.id && np.id !== AMBIENT_ID && !played.has(np.id)) {
+          // Frischer Titel aus UNSERER Playlist gefunden -> auf Anfang setzen,
+          // dann hörbar machen (startet garantiert bei 0:00).
+          try {
+            await seekToStart(dev);
+          } catch {
+            /* egal */
+          }
+          await unmute(dev);
+          lockRound(npToInfo(np), true);
+          return;
+        }
+
+        // Sonst: einen weiter (stumm).
+        await mute(dev);
+        await skipNext(dev);
+        await sleep(450);
       }
 
-      // Allerletzter Notnagel: alte Skip-Methode – aber STUMM, damit nichts
-      // hoerbar durchlaeuft. Danach Lautstaerke wiederherstellen.
-      if (!muted) {
-        prevVol = (await getPlaybackVolume()) ?? 100;
-        muted = dev;
-        try {
-          await setVolume(0, dev);
-        } catch {
-          /* egal */
-        }
-      }
-      const found = await skipFallback(dev);
+      // Nichts Frisches gefunden -> im Zweifel ist die Playlist durch.
       await unmute(dev);
-      if (!found) {
-        setMsg("Alle Songs dieser Playlist wurden gespielt. 🎉");
+      if (!allowExtRef.current) {
+        setPlaylistDone(true);
+      } else {
+        setMsg(
+          "Ich konnte gerade keinen freien Titel finden. Tippt bitte noch einmal auf „Song abspielen“."
+        );
         setPhase("idle");
       }
     } catch (e) {
-      // Falls wir mittendrin stummgeschaltet haben: Lautstaerke zuruecksetzen.
       if (muted) {
         try {
           await setVolume(prevVol, muted);
@@ -425,13 +315,14 @@ export function Game({
         setDeviceId(null);
         setPhase("idle");
         setMsg(
-          "Spotify ist eingeschlafen 😴 Kurz die Stimmung heben: Öffne die Spotify-App, starte einen Song und lass ihn laufen – dann hier wieder „Song abspielen“. Wir starten neu."
+          "Spotify ist eingeschlafen 😴 Öffne kurz die Spotify-App, starte dort einen Song und lass ihn laufen – und komm dann sofort wieder hierher zurück, bleib nicht in Spotify. Danach hier erneut „Song abspielen“."
         );
       } else {
         setMsg(m);
       }
     } finally {
       setBusy(false);
+      setPreparing(false);
     }
   }
 
@@ -548,7 +439,23 @@ export function Game({
           </div>
         )}
 
-        {!playlistDone && phase === "idle" && (
+        {!playlistDone && preparing && (
+          <div className="loading-card" aria-live="polite">
+            <div className="loading-eq" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </div>
+            <div className="loading-title">Song wird geladen …</div>
+            <div className="loading-sub">
+              Spotify sucht den nächsten Titel – einen Moment bitte
+            </div>
+          </div>
+        )}
+
+        {!playlistDone && !preparing && phase === "idle" && (
           <button className="start-tile" disabled={busy} onClick={playRound}>
             <span className="start-tile-eq">
               <i />
@@ -562,7 +469,7 @@ export function Game({
           </button>
         )}
 
-        {!playlistDone && phase === "playing" && (
+        {!playlistDone && !preparing && phase === "playing" && (
           <div className="playing-hero">
             <div className="eq">
               <span />
@@ -585,7 +492,7 @@ export function Game({
           </div>
         )}
 
-        {!playlistDone && (phase === "meta" || phase === "year") && current && (
+        {!playlistDone && !preparing && (phase === "meta" || phase === "year") && current && (
           <div className="reveal-card">
             <div className="lbl">Titel</div>
             <div className="reveal-title">{current.title}</div>

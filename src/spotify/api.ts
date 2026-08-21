@@ -175,7 +175,7 @@ export async function startPlaylist(playlistId: string): Promise<string> {
     devices[0];
   if (!target?.id) {
     throw new Error(
-      "Spotify ist eingeschlafen. Öffne kurz die Spotify-App, starte einen Song, komm zurück und tipp erneut auf „Song abspielen“."
+      "Spotify ist eingeschlafen 😴 Öffne kurz die Spotify-App, starte dort einen Song und lass ihn laufen – und komm dann sofort wieder hierher zurück, bleib nicht in Spotify. Danach hier erneut „Song abspielen“."
     );
   }
   try {
@@ -271,6 +271,14 @@ export async function setVolume(
     )}&device_id=${deviceId}`,
     { method: "PUT" }
   );
+}
+
+// Den laufenden Titel an den Anfang setzen (Position 0), damit der gerätselte
+// Song immer bei 0:00 startet – auch wenn davor stumm durchgeschaltet wurde.
+export async function seekToStart(deviceId: string): Promise<void> {
+  await api(`/me/player/seek?position_ms=0&device_id=${deviceId}`, {
+    method: "PUT",
+  });
 }
 
 export async function getPlaybackVolume(): Promise<number | null> {
