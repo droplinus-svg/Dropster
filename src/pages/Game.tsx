@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   getCurrentlyPlaying,
   getPlaybackVolume,
+  getPlaylistTrackIds,
   getQueue,
   pausePlayback,
   pickBestDeviceId,
@@ -57,9 +58,22 @@ export function Game({
   const [busy, setBusy] = useState(false);
   const [recheck, setRecheck] = useState(false);
   const [msg, setMsg] = useState("");
+  // Playlist komplett durchgespielt? Dann darf der/die Spielleiter/in
+  // entscheiden: mit Spotifys aehnlichen Songs weiter oder neue Playlist.
+  const [playlistDone, setPlaylistDone] = useState(false);
+  // Als Ref, damit die Wiedergabe-Logik direkt nach dem Antippen von
+  // "weiterspielen" sofort den neuen Wert sieht (ohne Render-Verzoegerung).
+  const allowExtRef = useRef(false);
 
   // Bekannte Titel der Playlist (ueber die Warteschlange angelernt).
   const knownRef = useRef<Map<string, TrackInfo>>(new Map());
+  // Die ECHTEN Track-IDs der gewaehlten Playlist (aus dem Playlist-Objekt).
+  // Damit wissen wir, wann alle Original-Titel dran waren – und welche Songs
+  // schon zu Spotifys Auto-Verlaengerung gehoeren.
+  const playlistIdsRef = useRef<Set<string>>(new Set());
+  // Kennen wir die VOLLSTAENDIGE Liste? (Nur dann ist das Ende-Signal sicher.)
+  const playlistCompleteRef = useRef<boolean>(false);
+  const [playlistTotal, setPlaylistTotal] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -77,8 +91,34 @@ export function Game({
       } catch {
         /* ohne Vorwissen weiter */
       }
+      try {
+        const { ids, total } = await getPlaylistTrackIds(playlistId);
+        playlistIdsRef.current = new Set(ids);
+        // Vollstaendig, wenn wir mindestens so viele IDs wie die gemeldete
+        // Gesamtzahl haben (Spotify liefert max. ~100 pro Seite).
+        playlistCompleteRef.current = ids.length >= total && total > 0;
+        setPlaylistTotal(playlistCompleteRef.current ? ids.length : total);
+      } catch {
+        /* Ende-Erkennung nicht moeglich – Spiel laeuft wie bisher weiter */
+      }
     })();
   }, [spielrundeId, playlistId]);
+
+  // Wie viele ECHTE Playlist-Titel (keine Auto-Verlaengerung) sind schon dran?
+  function playedPlaylistCount(): number {
+    let n = 0;
+    playlistIdsRef.current.forEach((id) => {
+      if (played.has(id)) n++;
+    });
+    return n;
+  }
+
+  // Sind alle Original-Titel der Playlist durchgespielt?
+  function playlistExhausted(): boolean {
+    const size = playlistIdsRef.current.size;
+    if (!playlistCompleteRef.current || size === 0) return false;
+    return playedPlaylistCount() >= size;
+  }
 
   // Nur die KOMMENDEN Playlist-Titel merken (nicht den gerade laufenden – der
   // koennte noch der Begruessungssong sein). Spielt nichts ab.
@@ -101,11 +141,18 @@ export function Game({
     }
   }
 
-  // Einen bekannten, noch nicht gesperrten Titel zufaellig waehlen.
+  // Einen bekannten, noch nicht gesperrten Titel zufaellig waehlen. Solange die
+  // Original-Playlist laeuft, NUR echte Playlist-Titel – so rutschen wir nicht
+  // versehentlich in Spotifys Auto-Verlaengerung. Erst wenn der/die Spielleiter/in
+  // bewusst "weiterspielen" waehlt (allowExtensions), sind auch aehnliche Songs erlaubt.
   function pickCandidate(): TrackInfo | null {
+    const restrict =
+      !allowExtRef.current && playlistIdsRef.current.size > 0;
     const cands: TrackInfo[] = [];
     knownRef.current.forEach((t) => {
-      if (t.id !== AMBIENT_ID && !played.has(t.id)) cands.push(t);
+      if (t.id === AMBIENT_ID || played.has(t.id)) return;
+      if (restrict && !playlistIdsRef.current.has(t.id)) return;
+      cands.push(t);
     });
     if (!cands.length) return null;
     return cands[Math.floor(Math.random() * cands.length)];
@@ -212,6 +259,13 @@ export function Game({
 
   async function playRound() {
     setMsg("");
+    // Sind alle Original-Titel dran und wir haben noch nicht bewusst auf
+    // "weiterspielen" getippt? Dann NICHT einfach weiterspielen, sondern
+    // sichtbar machen, dass die Playlist zu Ende ist.
+    if (playlistExhausted() && !allowExtRef.current) {
+      setPlaylistDone(true);
+      return;
+    }
     setBusy(true);
     // Merker fuer das stumme Anlernen: Solange muted !== null ist, haben wir
     // die Lautstaerke auf 0 gesetzt und muessen sie wieder herstellen, bevor
@@ -369,6 +423,13 @@ export function Game({
     }
   }
 
+  // Bewusst mit Spotifys aehnlichen Songs weiterspielen.
+  function continueWithExtensions() {
+    allowExtRef.current = true;
+    setPlaylistDone(false);
+    playRound();
+  }
+
   async function endGame() {
     try {
       if (deviceId) await pausePlayback(deviceId);
@@ -420,7 +481,25 @@ export function Game({
       )}
 
       <div className={"game-stage" + (deviceLost ? " compact" : "")}>
-        {phase === "idle" && (
+        {playlistDone && (
+          <div className="reveal-card playlist-done">
+            <div className="done-emoji" aria-hidden="true">🎉</div>
+            <div className="done-title">Playlist durchgespielt</div>
+            <p className="done-sub">
+              Alle{playlistTotal ? ` ${playlistTotal}` : ""} Songs von „{playlistName}“
+              waren dran. Ab jetzt hängt Spotify von selbst <b>ähnliche</b> Songs an –
+              die gehören nicht mehr zur Original-Playlist.
+            </p>
+            <button disabled={busy} onClick={continueWithExtensions}>
+              {busy ? "…" : "Mit ähnlichen Songs weiterspielen"}
+            </button>
+            <button className="secondary" onClick={onChangePlaylist}>
+              Andere Playlist wählen
+            </button>
+          </div>
+        )}
+
+        {!playlistDone && phase === "idle" && (
           <button className="start-tile" disabled={busy} onClick={playRound}>
             <span className="start-tile-eq">
               <i />
@@ -434,7 +513,7 @@ export function Game({
           </button>
         )}
 
-        {phase === "playing" && (
+        {!playlistDone && phase === "playing" && (
           <div className="playing-hero">
             <div className="eq">
               <span />
@@ -457,7 +536,7 @@ export function Game({
           </div>
         )}
 
-        {(phase === "meta" || phase === "year") && current && (
+        {!playlistDone && (phase === "meta" || phase === "year") && current && (
           <div className="reveal-card">
             <div className="lbl">Titel</div>
             <div className="reveal-title">{current.title}</div>

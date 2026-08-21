@@ -814,3 +814,24 @@ select, input {
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
   animation: splash-fade 0.35s ease both;
 }
+
+/* ---- Playlist durchgespielt ---- */
+.playlist-done { gap: 12px; }
+.done-emoji { font-size: 44px; line-height: 1; }
+.done-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+}
+.done-sub {
+  margin: 0 0 4px;
+  color: #cdd5df;
+  font-size: 15px;
+  line-height: 1.5;
+  max-width: 340px;
+}
+.done-sub b { color: #fff; }
+.playlist-done .secondary {
+  background: #1c2028;
+  color: var(--text);
+}

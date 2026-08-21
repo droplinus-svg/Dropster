@@ -411,6 +411,36 @@ export async function getPlaylistTracks(playlistId: string): Promise<Track[]> {
   return out;
 }
 
+// Nur die Track-IDs + Gesamtzahl der Playlist lesen (aus dem Playlist-Objekt,
+// das im Dev-Mode erlaubt ist). Damit erkennt das Spiel, wann ALLE echten
+// Playlist-Titel durchgespielt sind – ab dann haengt Spotify von selbst
+// aehnliche Songs an ("verlaengert" die Playlist). `total` ist die von Spotify
+// gemeldete Gesamtzahl; ist ids.length < total, war die Liste zu lang fuer eine
+// Seite (>100) und wir kennen nicht alle – dann verzichten wir aufs Ende-Signal.
+export async function getPlaylistTrackIds(
+  playlistId: string
+): Promise<{ ids: string[]; total: number }> {
+  const data = await api<{
+    tracks?: {
+      total?: number;
+      items?: { track: { uri?: string; id?: string; is_local?: boolean } | null }[];
+    };
+  }>(`/playlists/${playlistId}`);
+  const items = data.tracks?.items ?? [];
+  const ids: string[] = [];
+  for (const it of items) {
+    const t = it.track;
+    if (!t || t.is_local) continue;
+    const id =
+      t.id ??
+      (t.uri && t.uri.startsWith("spotify:track:")
+        ? (t.uri.split(":").pop() as string)
+        : null);
+    if (id) ids.push(id);
+  }
+  return { ids, total: data.tracks?.total ?? ids.length };
+}
+
 interface RawTrack {
   uri: string;
   name: string;
