@@ -346,10 +346,13 @@ export function Game({
             <p className="question">
               Ein Song läuft 🎧
               <br />
-              Aus welchem <span>Jahr</span> ist er?
+              Ratet <span>Titel, Interpret &amp; Jahr</span>
+            </p>
+            <p className="play-hint">
+              Titel &amp; Interpret sagen · Zettel legen · dann auflösen
             </p>
             <button className="big-solve" disabled={busy} onClick={reveal}>
-              {busy ? "…" : "Lösen"}
+              {busy ? "…" : "Titel & Interpret zeigen"}
             </button>
           </div>
         )}
@@ -392,6 +395,13 @@ export function Game({
                   {recheck ? "… wird geprüft" : "↻ Jahr erneut prüfen"}
                 </button>
               )}
+
+            <p
+              className="reveal-hint"
+              style={{ visibility: phase === "meta" ? "visible" : "hidden" }}
+            >
+              Jetzt Zettel legen &amp; „Hitster!“ rufen – dann das Jahr.
+            </p>
 
             {phase === "meta" ? (
               <button disabled={busy} onClick={() => setPhase("year")}>

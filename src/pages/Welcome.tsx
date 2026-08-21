@@ -9,16 +9,16 @@ export function Welcome({ onReady }: { onReady: () => void }) {
           Öffne die <strong>Spotify-App</strong> auf diesem Handy.
         </li>
         <li>
-          Starte <strong>irgendeinen Song</strong> und lass ihn{" "}
-          <strong>laufen</strong> – nicht pausieren.
+          Starte <strong>irgendeinen Song</strong> und komm{" "}
+          <strong>sofort hierher zurück</strong> – bleib nicht in Spotify.
         </li>
         <li>
-          Komm hierher zurück und tippe <strong>„Los geht’s“</strong>.
+          Tippe <strong>„Los geht’s“</strong>. Der Song läuft in Dropster weiter.
         </li>
       </ol>
       <p className="muted">
-        Das ist der Begrüßungssong – er weckt Spotify, damit Dropster die Musik
-        steuern kann. Danach läuft alles von selbst.
+        Das weckt Spotify, damit Dropster die Musik steuern kann. Du musst den
+        Song <strong>nicht</strong> in Spotify anhören – das passiert hier.
       </p>
       <button
         className="secondary"

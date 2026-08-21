@@ -28,8 +28,12 @@ export function PlaylistSelect({
   return (
     <div className="stack">
       <div className="panel stack">
-        <strong>Playlist wählen</strong>
-        <p className="muted">Aus welcher Playlist soll geraten werden?</p>
+        <strong>Deine Playlists</strong>
+        <p className="muted">
+          Das sind <strong>deine eigenen</strong> Spotify-Playlists – wähle eine,
+          die zum Spielen passt. Tipp: eine <strong>bunt gemischte</strong> Liste
+          über viele Jahrzehnte macht am meisten Spaß.
+        </p>
         {loading && <p className="muted">Lade Playlists …</p>}
         {msg && <p className="muted">{msg}</p>}
         <div className="stack">

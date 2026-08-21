@@ -196,6 +196,19 @@ select, input {
 }
 .question span { color: var(--accent); }
 .big-solve { font-size: 22px; padding: 20px; border-radius: 20px; }
+.play-hint {
+  margin: -8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.4;
+}
+.reveal-card .reveal-hint {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
 
 .start-tile {
   width: 100%;
@@ -519,4 +532,177 @@ select, input {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* Onboarding-Slideshow (Erststart + „i") */
+.ob-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background:
+    radial-gradient(120% 80% at 50% -10%, #16241c 0%, transparent 55%),
+    var(--bg);
+  display: flex;
+  flex-direction: column;
+  padding: max(14px, env(safe-area-inset-top)) 14px
+    max(16px, env(safe-area-inset-bottom));
+}
+.ob-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 2px;
+}
+.ob-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  font-size: 18px;
+  color: var(--text);
+}
+.ob-logo .ob-eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 18px;
+}
+.ob-logo .ob-eq i {
+  width: 4px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.ob-logo .ob-eq i:nth-child(1) { height: 9px; }
+.ob-logo .ob-eq i:nth-child(2) { height: 17px; }
+.ob-logo .ob-eq i:nth-child(3) { height: 12px; background: #0e6b30; }
+.ob-logo .ob-eq i:nth-child(4) { height: 5px; background: #7d8794; }
+.ob-logo span b { color: var(--accent); }
+.ob-skip {
+  width: auto;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.ob-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  touch-action: pan-y;
+}
+.ob-track {
+  display: flex;
+  height: 100%;
+  transition: transform 0.34s cubic-bezier(0.4, 0.01, 0.2, 1);
+}
+.ob-slide {
+  min-width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: center;
+  padding: 4px 14px 8px;
+  gap: 14px;
+  overflow-y: auto;
+}
+.ob-art {
+  width: 100%;
+  max-width: 340px;
+  height: min(230px, 32vh);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 6px;
+}
+.ob-art svg { width: 100%; height: 100%; }
+.ob-kicker {
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 800;
+}
+.ob-h2 {
+  font-size: 23px;
+  line-height: 1.2;
+  margin: 0;
+  font-weight: 800;
+  color: var(--text);
+  text-wrap: balance;
+}
+.ob-p {
+  margin: 0;
+  color: #cdd5df;
+  font-size: 15.5px;
+  line-height: 1.55;
+  max-width: 340px;
+}
+.ob-p b { color: #fff; font-weight: 700; }
+.ob-p .g { color: var(--accent); font-weight: 700; }
+.ob-p .r { color: #ff9ea1; font-weight: 700; }
+.ob-tip {
+  margin-top: 2px;
+  background: rgba(29, 185, 84, 0.14);
+  color: #a9e6bd;
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  max-width: 340px;
+}
+.ob-tip b { color: #d7f5e1; }
+.ob-foot {
+  padding: 10px 4px 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+.ob-dots { display: flex; justify-content: center; gap: 7px; }
+.ob-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: #39404c;
+  padding: 0;
+  transition: all 0.25s;
+}
+.ob-dot.on { width: 22px; background: var(--accent); }
+.ob-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+}
+.ob-btn { font-weight: 800; border-radius: 99px; padding: 15px 20px; }
+.ob-back {
+  background: #1c2028;
+  color: var(--text);
+  width: 56px;
+  flex: none;
+  font-size: 20px;
+  line-height: 1;
+  padding: 14px;
+}
+.ob-back:disabled { opacity: 0; pointer-events: none; }
+.ob-next { background: var(--accent); color: #04180d; flex: 1; }
+.ob-details {
+  width: auto;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-track { transition: none; }
+  .ob-dot { transition: none; }
 }

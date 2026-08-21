@@ -8,6 +8,9 @@ import { GroupSelect } from "./pages/GroupSelect";
 import { PlaylistSelect } from "./pages/PlaylistSelect";
 import { Game } from "./pages/Game";
 import { Info } from "./pages/Info";
+import { Onboarding } from "./pages/Onboarding";
+
+const ONBOARD_KEY = "dropster.onboarded";
 
 type Screen =
   | "loading"
@@ -24,6 +27,25 @@ export function App() {
   const [playlistName, setPlaylistName] = useState("");
   const [spielrunde, setSpielrunde] = useState<Spielrunde | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Beim allerersten Start die Einführung zeigen (einmalig pro Gerät).
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(ONBOARD_KEY)) setShowOnboarding(true);
+    } catch {
+      /* localStorage nicht verfügbar – ohne Einführung weiter */
+    }
+  }, []);
+
+  function closeOnboarding() {
+    setShowOnboarding(false);
+    try {
+      localStorage.setItem(ONBOARD_KEY, "1");
+    } catch {
+      /* egal */
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -54,11 +76,20 @@ export function App() {
       {screen !== "loading" && (
         <button
           className="info-btn"
-          aria-label="Spielanleitung"
-          onClick={() => setShowInfo(true)}
+          aria-label="Einführung"
+          onClick={() => setShowOnboarding(true)}
         >
           i
         </button>
+      )}
+      {showOnboarding && (
+        <Onboarding
+          onClose={closeOnboarding}
+          onDetails={() => {
+            closeOnboarding();
+            setShowInfo(true);
+          }}
+        />
       )}
       {showInfo && <Info onClose={() => setShowInfo(false)} />}
 
