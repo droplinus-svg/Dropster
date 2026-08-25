@@ -334,25 +334,37 @@ export function Game({
       // Nach dem Anlernen die sichtbare Topf-Größe aktualisieren.
       setMemberCount(memberTracksRef.current.length);
 
-      // 2. Zufälligen freien Titel ziehen und gezielt anspringen. Bei einem
-      //    veralteten/unbrauchbaren Eintrag den nächsten versuchen.
+      // 2. Gibt es überhaupt einen freien Titel? Wenn NICHT, ist wirklich alles
+      //    dran (bzw. von der Gruppe schon gehört) -> Ende-Karte.
+      const first = pickMember();
+      if (!first) {
+        setPlaylistDone(true);
+        return;
+      }
+
+      // Zufälligen freien Titel gezielt anspringen. Bei einem veralteten Eintrag
+      // den nächsten versuchen.
       for (let tries = 0; tries < 6; tries++) {
-        const cand = pickMember();
-        if (!cand) {
-          setPlaylistDone(true);
-          return;
-        }
+        const cand = tries === 0 ? first : pickMember();
+        if (!cand) break;
         const ours = `spotify:playlist:${cand.playlistId}`;
         try {
           await playTrackInContext(cand.playlistId, cand.uri, dev);
-          // Kurz prüfen, ob wirklich der richtige Kontext läuft.
-          await sleep(450);
-          const chk = await getCurrentlyPlaying();
-          if (chk?.contextUri !== ours && chk?.id !== cand.id) {
-            throw new Error("Kontext passt nicht");
-          }
         } catch {
-          // Eintrag unbrauchbar -> aus dem Topf werfen und nächsten versuchen.
+          removeFromPool(cand.id);
+          continue;
+        }
+        // Auf den tatsächlichen Start warten (Kaltstart kann kurz dauern).
+        let started = false;
+        for (let p = 0; p < 5; p++) {
+          await sleep(400);
+          const chk = await getCurrentlyPlaying();
+          if (chk?.contextUri === ours || chk?.id === cand.id) {
+            started = true;
+            break;
+          }
+        }
+        if (!started) {
           removeFromPool(cand.id);
           continue;
         }
@@ -367,8 +379,12 @@ export function Game({
         return;
       }
 
-      // Nichts Spielbares gefunden.
-      setPlaylistDone(true);
+      // Es GÄBE freie Titel, aber der Start klappte gerade nicht -> KEIN
+      // „durchgespielt", sondern freundlich zum erneuten Versuch bitten.
+      setMsg(
+        "Ich konnte gerade keinen Song starten. Tippt bitte noch einmal auf „Song abspielen“ – oder öffnet kurz Spotify und startet dort einen Song."
+      );
+      setPhase("idle");
     } catch (e) {
       const m = (e as Error).message;
       if (isDeviceError(m)) {
@@ -423,10 +439,10 @@ export function Game({
     }
   }
 
-  // Nochmal von vorn: schon gespielte Titel wieder freigeben (Sperrliste bleibt).
+  // Nochmal – ab jetzt sind Wiederholungen erlaubt (Titel dürfen erneut kommen).
   function playAgain() {
+    allowRepeatsRef.current = true;
     playedMembersRef.current = 0;
-    setPlayed(new Set(blacklistRef.current));
     setPlaylistDone(false);
     playRound();
   }
@@ -486,11 +502,17 @@ export function Game({
         {playlistDone && (
           <div className="reveal-card playlist-done">
             <div className="done-emoji" aria-hidden="true">🎉</div>
-            <div className="done-title">Alle Songs durchgespielt</div>
+            <div className="done-title">
+              {round === 0 ? "Schon alle gehört" : "Alle Songs durchgespielt"}
+            </div>
             <p className="done-sub">
-              Alle{playlistTotal ? ` ${playlistTotal}` : ""} Songs aus{" "}
-              {playlists.length === 1 ? "„" + combinedName + "“" : "den gewählten Listen"}{" "}
-              waren dran.
+              {round === 0
+                ? "Diese Gruppe hat die bekannten Songs dieser Listen schon gehört. Tippt „Nochmal“, um trotzdem zu spielen (Titel dürfen sich dann wiederholen)."
+                : `Alle${playlistTotal ? ` ${playlistTotal}` : ""} Songs aus ${
+                    playlists.length === 1
+                      ? "„" + combinedName + "“"
+                      : "den gewählten Listen"
+                  } waren dran.`}
             </p>
             <button disabled={busy} onClick={playAgain}>
               {busy ? "…" : "Nochmal – Songs dürfen sich wiederholen"}
