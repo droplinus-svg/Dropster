@@ -278,21 +278,25 @@ export function Game({
         setDeviceId(dev);
       }
 
-      // FALL A: Eigene Playlist mit vollständig bekannter Titelliste -> den
-      // besten Weg nehmen: gezielt EINEN noch nicht gespielten Titel im
+      // FALL A: Wir kennen echte Titel dieser Playlist (mit Abspiel-Adresse) ->
+      // den besten Weg nehmen: gezielt EINEN noch nicht gespielten Titel im
       // Playlist-Kontext starten. Kein Durchschalten, kein Stummschalten (das
       // auf dem iPhone unzuverlässig war und die kurz angespielten Songs
       // verursachte), und der Song startet bei 0:00.
-      if (memberListCompleteRef.current && !allowExtRef.current) {
+      if (memberTracksRef.current.length > 0 && !allowExtRef.current) {
         const cand = pickMember();
-        if (!cand) {
-          // Alle echten Titel gespielt -> Playlist durch.
+        if (cand) {
+          await playTrackInContext(playlistId, cand.uri, dev);
+          lockRound(cand, true);
+          return;
+        }
+        // Keine bekannten freien Titel mehr. Ist die Liste vollständig, ist die
+        // Playlist durch. Sonst (unvollständig gelesen) unten über den Kontext
+        // nach den restlichen, uns unbekannten Titeln weitersuchen.
+        if (memberListCompleteRef.current) {
           setPlaylistDone(true);
           return;
         }
-        await playTrackInContext(playlistId, cand.uri, dev);
-        lockRound(cand, true);
-        return;
       }
 
       // FALL B: Verborgene Titelliste ODER Erweiterungen erlaubt -> wir kennen
