@@ -3,7 +3,6 @@ import {
   getCurrentlyPlaying,
   getPlaybackVolume,
   getPlaylistMembers,
-  pausePlayback,
   pickBestDeviceId,
   playTrack,
   searchAmbientUri,
@@ -84,6 +83,9 @@ export function Game({
   const [playlistTotal, setPlaylistTotal] = useState(0);
   // Wie viele ECHTE Playlist-Titel wurden schon gespielt (keine Erweiterungen)?
   const playedMembersRef = useRef(0);
+  // Zuletzt bekannte "echte" Lautstaerke (>0). Schutz davor, dass die App nach
+  // dem stummen Vorbereiten versehentlich auf 0 haengen bleibt.
+  const lastVolRef = useRef(70);
 
   useEffect(() => {
     (async () => {
@@ -187,13 +189,26 @@ export function Game({
     let prevVol = 100;
     async function mute(dev: string) {
       if (!muted) {
-        prevVol = (await getPlaybackVolume()) ?? 100;
+        // Nie auf 0 "wiederherstellen": ein 0-/unbekannt-Wert wuerde die App
+        // stumm festsetzen (dann spielt gar keine Playlist mehr, bis man sie
+        // neu startet). Deshalb nur echte Werte (>=5) merken, sonst den letzten
+        // bekannten guten Wert nehmen.
+        const read = await getPlaybackVolume();
+        if (read != null && read >= 5) {
+          prevVol = read;
+          lastVolRef.current = read;
+        } else {
+          prevVol = lastVolRef.current;
+        }
         muted = dev;
         try {
           await setVolume(0, dev);
         } catch {
           /* egal */
         }
+        // Kurz warten, bis die Stummschaltung wirklich greift – sonst hoert man
+        // den Anfang des naechsten (noch nicht gemeinten) Songs.
+        await sleep(250);
       }
     }
     async function unmute(dev: string) {
@@ -361,8 +376,20 @@ export function Game({
   }
 
   async function endGame() {
+    // NICHT pausieren – das entkoppelt Spotify (die App verliert das Geraet).
+    // Stattdessen den stillen Ambient-Track spielen: haelt die Verbindung, damit
+    // man ohne Neuverbinden gleich eine neue Runde starten kann. Vorher die
+    // Lautstaerke sicher auf einen hoerbaren Wert setzen (falls sie vom stummen
+    // Vorbereiten noch auf 0 stand).
     try {
-      if (deviceId) await pausePlayback(deviceId);
+      if (deviceId) {
+        try {
+          await setVolume(lastVolRef.current, deviceId);
+        } catch {
+          /* egal */
+        }
+        await playTrack(AMBIENT_URI, deviceId);
+      }
     } catch {
       /* egal */
     }

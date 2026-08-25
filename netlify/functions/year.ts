@@ -21,7 +21,7 @@ const UA = `Dropster/0.1 ( ${process.env.MUSICBRAINZ_CONTACT ?? "unknown"} )`;
 // Hartes Gesamt-Zeitbudget der Funktion. Netlify bricht Funktionen nach ~10 s
 // mit "504 Inactivity Timeout" ab. Wir bleiben klar darunter und antworten
 // notfalls VORHER mit dem Spotify-Jahr, statt in den 504 zu laufen.
-const BUDGET_MS = 8000;
+const BUDGET_MS = 8500;
 
 // fetch mit hartem Timeout, damit eine einzelne haengende Anfrage nicht das
 // ganze Budget frisst.
@@ -99,11 +99,22 @@ async function mb(path: string, deadline: number, tries = 0): Promise<any> {
   // Kein Budget mehr -> gar nicht erst anfragen.
   if (Date.now() >= deadline) throw new Error("Zeitbudget erschöpft");
   const remaining = deadline - Date.now();
-  const res = await fetchTimeout(
-    `${MB}${path}`,
-    { headers: { "User-Agent": UA, Accept: "application/json" } },
-    Math.min(4000, remaining)
-  );
+  let res: Response;
+  try {
+    res = await fetchTimeout(
+      `${MB}${path}`,
+      { headers: { "User-Agent": UA, Accept: "application/json" } },
+      Math.min(5000, remaining)
+    );
+  } catch {
+    // Abbruch durch unseren Timeout ("operation aborted") -> wie eine
+    // Ueberlastung behandeln: kurz erneut versuchen, wenn noch Budget da ist.
+    if (tries < 2 && deadline - Date.now() > 1500) {
+      await sleep(400);
+      return mb(path, deadline, tries + 1);
+    }
+    throw new Error("MusicBrainz zu langsam (Zeitüberschreitung)");
+  }
   if (res.status === 404) return null;
   if (res.status === 503 || res.status === 429) {
     // Nur erneut versuchen, wenn noch genug Zeit ist (kurze feste Pause).
@@ -125,6 +136,11 @@ interface Resolved {
   source: "musicbrainz" | "spotify_fallback";
   confidence: "high" | "medium" | "low";
   artistMbid: string | null;
+  // provisorisch: Wir hatten ein Work, konnten die genaue "fruehestes Release"-
+  // Abfrage aber (noch) nicht sicher auswerten -> das Jahr koennte ein
+  // Remaster-/Aufnahmedatum sein. Solche Ergebnisse werden NICHT gecacht,
+  // damit ein spaeterer Versuch das echte Erstveroeffentlichungsjahr liefert.
+  partial?: boolean;
 }
 
 async function resolveByIsrc(
@@ -147,33 +163,53 @@ async function resolveByIsrc(
   const workMbid: string | null = workRel?.work?.id ?? null;
   const recDate = yearOf(rec["first-release-date"]);
 
-  // 2a) Work vorhanden -> fruehestes Release DESSELBEN Interpreten fuer dieses
-  //     Work. Das ist die genauste, aber langsamste Stufe (zweite MB-Anfrage +
-  //     1s Rate-Limit-Pause). Nur gehen, wenn das Zeitbudget dafuer reicht –
-  //     sonst nehmen wir unten das Aufnahmedatum.
-  if (workMbid && artistMbid && deadline - Date.now() > 2800) {
-    await sleep(1000);
-    const w = await mb(
-      `/recording?work=${workMbid}&inc=artist-credits&limit=100&fmt=json`,
-      deadline
-    );
-    const sameArtist = (w?.recordings ?? []).filter((r: any) =>
-      (r["artist-credit"] ?? []).some((ac: any) => ac.artist?.id === artistMbid)
-    );
-    const years = sameArtist
-      .map((r: any) => yearOf(r["first-release-date"]))
-      .filter((y: number | null): y is number => y != null);
-    if (years.length) {
+  // Fall A: Der Song ist einer Komposition (Work) zugeordnet – typisch fuer
+  // Originale UND Remaster/Neuaufnahmen. Nur ueber das Work bekommen wir das
+  // ECHTE Erstveroeffentlichungsjahr durch diesen Interpreten.
+  if (workMbid && artistMbid) {
+    // Genaue Abfrage nur, wenn das Zeitbudget reicht (zweite MB-Anfrage +
+    // 1s Rate-Limit-Pause).
+    if (deadline - Date.now() > 2500) {
+      await sleep(1000);
+      const w = await mb(
+        `/recording?work=${workMbid}&inc=artist-credits&limit=100&fmt=json`,
+        deadline
+      );
+      const sameArtist = (w?.recordings ?? []).filter((r: any) =>
+        (r["artist-credit"] ?? []).some(
+          (ac: any) => ac.artist?.id === artistMbid
+        )
+      );
+      const years = sameArtist
+        .map((r: any) => yearOf(r["first-release-date"]))
+        .filter((y: number | null): y is number => y != null);
+      if (years.length) {
+        // ECHTES Erstveroeffentlichungsjahr durch diesen Interpreten.
+        return {
+          year: Math.min(...years),
+          source: "musicbrainz",
+          confidence: "high",
+          artistMbid,
+        };
+      }
+    }
+    // Konnten die genaue Abfrage nicht (sicher) auswerten -> Aufnahmedatum als
+    // VORLAEUFIGES Ergebnis. Wird nicht gecacht, damit spaeter das echte
+    // Erstveroeffentlichungsjahr nachgeliefert werden kann.
+    if (recDate) {
       return {
-        year: Math.min(...years),
+        year: recDate,
         source: "musicbrainz",
-        confidence: "high",
+        confidence: "medium",
         artistMbid,
+        partial: true,
       };
     }
+    return null;
   }
 
-  // 2b) Kein Work / Cover -> Datum der konkreten Aufnahme.
+  // Fall B: Kein Work hinterlegt (echtes Einzelrecording / mancher Cover) ->
+  // das Aufnahmedatum IST hier die beste Antwort und darf gecacht werden.
   if (recDate) {
     return {
       year: recDate,
@@ -198,11 +234,17 @@ export async function handler(event: { body: string | null }) {
     const t = JSON.parse(event.body ?? "{}") as Partial<InTrack>;
     if (!t.trackId) return { statusCode: 400, body: "trackId erwartet" };
 
-    // 1) Cache? – aber NUR echten MusicBrainz-Treffern vertrauen. Alte
-    //    Spotify-Fallbacks duerfen einen erneuten MusicBrainz-Versuch nicht
-    //    blockieren.
+    // 1) Cache? – aber NUR gesicherten MusicBrainz-Treffern (confidence "high"
+    //    = ueber das Work bestaetigtes Erstveroeffentlichungsjahr) vertrauen.
+    //    So blockieren weder alte Spotify-Fallbacks noch vorlaeufige
+    //    Aufnahme-/Remaster-Daten einen erneuten, genaueren Versuch.
     const hit = await cacheRead(t.trackId).catch(() => null);
-    if (hit && hit.resolved_year != null && hit.source === "musicbrainz") {
+    if (
+      hit &&
+      hit.resolved_year != null &&
+      hit.source === "musicbrainz" &&
+      hit.confidence === "high"
+    ) {
       return json({
         year: hit.resolved_year,
         source: hit.source,
@@ -244,18 +286,23 @@ export async function handler(event: { body: string | null }) {
       });
     }
 
-    // 3b) Echter MusicBrainz-Treffer -> dauerhaft cachen.
-    await cacheWrite({
-      track_id: t.trackId,
-      isrc: t.isrc ?? null,
-      title: t.title ?? null,
-      artist: t.artist ?? null,
-      artist_mbid: resolved.artistMbid,
-      resolved_year: resolved.year,
-      source: resolved.source,
-      confidence: resolved.confidence,
-      updated_at: new Date().toISOString(),
-    });
+    // 3b) NUR gesicherte Treffer (confidence "high", ueber das Work bestaetigt)
+    //     dauerhaft cachen. Vorlaeufige Aufnahme-/Remaster-Daten (partial) NICHT
+    //     cachen – sonst blockieren sie fuer immer das echte
+    //     Erstveroeffentlichungsjahr.
+    if (resolved.confidence === "high" && !resolved.partial) {
+      await cacheWrite({
+        track_id: t.trackId,
+        isrc: t.isrc ?? null,
+        title: t.title ?? null,
+        artist: t.artist ?? null,
+        artist_mbid: resolved.artistMbid,
+        resolved_year: resolved.year,
+        source: resolved.source,
+        confidence: resolved.confidence,
+        updated_at: new Date().toISOString(),
+      });
+    }
 
     return json({
       year: resolved.year,
