@@ -13,6 +13,8 @@ import {
   type TrackInfo,
 } from "../spotify/api";
 import { burnSong, loadBlacklist } from "../lib/groups";
+import { loadKnownTracks, recordTracks } from "../lib/tracks";
+import { supabaseConfigured } from "../lib/supabase";
 import { resolveYear, type YearResult } from "../lib/year";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -123,6 +125,24 @@ export function Game({
         }
       } catch {
         /* Titelliste nicht lesbar – dann greift nur die Kontext-Prüfung */
+      }
+      // Zusätzlich: früher gelernte Titel dieser Playlist (aus der
+      // Warteschlange gemerkt) laden. Damit können wir beim Start direkt einen
+      // bekannten Titel anspringen – ohne den hörbaren Zufalls-Anspieler.
+      try {
+        const cached = await loadKnownTracks(playlistId);
+        if (cached.length) {
+          const have = new Set(memberTracksRef.current.map((t) => t.id));
+          cached.forEach((t) => {
+            if (t.uri && !have.has(t.id)) {
+              memberTracksRef.current.push(t);
+              memberIdsRef.current.add(t.id);
+              have.add(t.id);
+            }
+          });
+        }
+      } catch {
+        /* ohne Cache weiter */
       }
     })();
   }, [spielrundeId, playlistId]);
@@ -241,31 +261,45 @@ export function Game({
         setDeviceId(dev);
       }
 
-      // FALL A: Wir kennen echte Titel dieser Playlist (mit Abspiel-Adresse) ->
-      // gezielt EINEN noch nicht gespielten Titel im Playlist-Kontext starten.
-      // Kein Durchschalten, startet bei 0:00.
-      if (memberTracksRef.current.length > 0 && !allowExtRef.current) {
+      // Aktuellen Zustand lesen (brauchen wir gleich mehrfach).
+      let np = await getCurrentlyPlaying();
+      const startedInOurs = np?.contextUri === ours;
+
+      // FALL A: NUR beim (Wieder-)Einstieg ohne laufenden Playlist-Kontext ->
+      // sauberer Direktstart aus bekannten/gemerkten Titeln, ganz ohne den
+      // hörbaren Zufalls-Anspieler von startPlaylist. (Mitten im Spiel läuft der
+      // Kontext schon – da braucht es das nicht, das erledigt Fall B lautlos.)
+      if (
+        !startedInOurs &&
+        memberTracksRef.current.length > 0 &&
+        !allowExtRef.current
+      ) {
         const cand = pickMember();
         if (cand) {
-          await playTrackInContext(playlistId, cand.uri, dev);
-          lockRound(cand, true);
-          return;
+          try {
+            await playTrackInContext(playlistId, cand.uri, dev);
+            // Kurz prüfen, ob wirklich UNSERE Playlist läuft (ein veralteter
+            // Cache-Eintrag könnte danebenliegen) – sonst normal über Fall B.
+            await sleep(450);
+            const chk = await getCurrentlyPlaying();
+            if (chk?.contextUri === ours) {
+              lockRound(cand, true);
+              return;
+            }
+          } catch {
+            /* Direktstart misslungen -> unten normal über den Kontext */
+          }
         }
-        if (memberListCompleteRef.current) {
-          setPlaylistDone(true);
-          return;
-        }
-        // Liste unvollständig -> unten über den Kontext weiter.
       }
 
-      // FALL B: Titelliste unbekannt -> im Kontext bleiben. Wir lesen die
-      // KOMMENDE Warteschlange (echte Playlist-Titel MIT Abspiel-Adresse) und
-      // springen DIREKT zum nächsten freien Titel. Gesperrte/schon gespielte
-      // Titel werden dabei LAUTLOS übersprungen (kein hörbares Durchschalten) –
-      // das ist der Fix für den Gruppen-Modus mit voller Sperrliste.
+      // FALL B: Kontext sicherstellen und über die KOMMENDE Warteschlange (echte
+      // Playlist-Titel MIT Abspiel-Adresse) DIREKT zum nächsten freien Titel
+      // springen. Gesperrte/schon gespielte Titel werden dabei LAUTLOS
+      // übersprungen. Nebenbei merken wir uns die Titel für den nächsten
+      // Direktstart.
 
       // 1. Kontext sicherstellen (nur wenn nötig – NICHT jede Runde neu starten).
-      let np = await getCurrentlyPlaying();
+      np = await getCurrentlyPlaying();
       if (np?.contextUri !== ours) {
         dev = await startPlaylist(playlistId);
         setDeviceId(dev);
@@ -314,6 +348,23 @@ export function Game({
         }
 
         const q = await getQueue();
+
+        // Titel dieser Playlist für den nächsten Direktstart merken (aus der
+        // laufenden Warteschlange – das sind echte Playlist-Titel).
+        if (supabaseConfigured) {
+          const learn = [q.current, ...q.upcoming].filter(
+            (t): t is TrackInfo =>
+              !!t && !!t.uri && t.id !== AMBIENT_ID && !isForeignInjection(t.id)
+          );
+          learn.forEach((t) => {
+            if (!memberIdsRef.current.has(t.id)) {
+              memberIdsRef.current.add(t.id);
+              memberTracksRef.current.push(t);
+            }
+          });
+          if (learn.length) recordTracks(playlistId, learn).catch(() => {});
+        }
+
         // Nächster freier Titel in Spielrichtung (aktueller + kommende).
         const pool = [q.current, ...q.upcoming].filter(
           (t): t is TrackInfo =>
