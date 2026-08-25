@@ -269,6 +269,15 @@ export function Game({
       if (np?.contextUri !== ours) {
         dev = await startPlaylist(playlistId);
         setDeviceId(dev);
+        // SOFORT pausieren: startPlaylist spielt einen zufälligen (oft
+        // gesperrten) Titel an. Durch das schnelle Pausieren bleibt davon nur
+        // ein winziger Moment hörbar, und wir springen gleich lautlos zum
+        // ersten freien Titel.
+        try {
+          await pausePlayback(dev);
+        } catch {
+          /* egal */
+        }
         let switched = false;
         for (let i = 0; i < 20; i++) {
           await sleep(350);
@@ -317,11 +326,10 @@ export function Game({
 
         if (pool.length) {
           const cand = pool[0];
-          // Läuft der freie Titel schon? -> übernehmen. Sonst gezielt dorthin
-          // springen (überspringt gesperrte Titel davor lautlos).
-          if (np?.id !== cand.id) {
-            await playTrackInContext(playlistId, cand.uri, dev);
-          }
+          // Gezielt zum freien Titel springen (überspringt gesperrte Titel davor
+          // lautlos) UND ihn sicher starten – wichtig, weil wir zuvor pausiert
+          // haben. Startet bei 0:00.
+          await playTrackInContext(playlistId, cand.uri, dev);
           lockRound(cand, true);
           return;
         }
