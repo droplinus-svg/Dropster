@@ -7,6 +7,7 @@ import {
   pickBestDeviceId,
   playTrack,
   playTrackInContext,
+  searchAmbientUri,
   setShuffle,
   skipNext,
   startPlaylist,
@@ -214,10 +215,10 @@ export function Game({
         if (np.id === AMBIENT_ID) return;
         if (confirmed) {
           stopped = true;
-          // Pausieren (Kontext bleibt erhalten), statt den Ambient-Track zu
-          // spielen – so kann die nächste Runde einfach weiter vorgehen.
+          // Den ruhigen Ambient-Track spielen: stoppt den fremden Autoplay UND
+          // hält die Spotify-Verbindung wach (Pausieren würde das Gerät trennen).
           try {
-            await pausePlayback(dev);
+            await playTrack(AMBIENT_URI, dev);
           } catch {
             /* egal */
           }
@@ -436,15 +437,20 @@ export function Game({
     setMsg("");
     try {
       setPhase("meta");
-      // Pausieren (NICHT den Ambient-Track spielen): So bleibt der Playlist-
-      // Kontext erhalten und die nächste Runde geht einfach EINEN Titel vor,
-      // statt die Playlist neu zu starten (was die schon gespielten Titel
-      // wieder anspielen würde).
+      // Ruhigen Ambient-Track spielen: hält die Spotify-Verbindung während der
+      // Ratepause wach (Pausieren würde das Gerät trennen – dann müsste man erst
+      // zu Spotify zurück). Die nächste Runde springt ohnehin gezielt zu einem
+      // zufälligen Titel, braucht den Playlist-Kontext also nicht mehr.
       if (deviceId) {
         try {
-          await pausePlayback(deviceId);
+          await playTrack(AMBIENT_URI, deviceId);
         } catch {
-          /* Song laeuft leise weiter – unkritisch */
+          try {
+            const uri = await searchAmbientUri();
+            if (uri) await playTrack(uri, deviceId);
+          } catch {
+            /* Song läuft leise weiter – unkritisch */
+          }
         }
       }
     } finally {
