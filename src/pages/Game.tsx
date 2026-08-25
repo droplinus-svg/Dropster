@@ -7,6 +7,7 @@ import {
   pickBestDeviceId,
   playTrack,
   playTrackInContext,
+  setShuffle,
   skipNext,
   startPlaylist,
   type NowPlaying,
@@ -265,31 +266,36 @@ export function Game({
       let np = await getCurrentlyPlaying();
       const startedInOurs = np?.contextUri === ours;
 
-      // FALL A: NUR beim (Wieder-)Einstieg ohne laufenden Playlist-Kontext ->
-      // sauberer Direktstart aus bekannten/gemerkten Titeln, ganz ohne den
-      // hörbaren Zufalls-Anspieler von startPlaylist. (Mitten im Spiel läuft der
-      // Kontext schon – da braucht es das nicht, das erledigt Fall B lautlos.)
-      if (
-        !startedInOurs &&
-        memberTracksRef.current.length > 0 &&
-        !allowExtRef.current
-      ) {
+      // PRIMÄRWEG: Wenn wir die Titel (mit Abspiel-Adresse) kennen -> JEDE Runde
+      // einen ZUFÄLLIGEN noch nicht gespielten Titel direkt anspringen. Das
+      // sorgt für echte Zufalls-Reihenfolge (auch bei nach Jahr sortierten
+      // Playlists!) und kommt ganz ohne hörbaren Zufalls-Anspieler aus.
+      if (memberTracksRef.current.length > 0 && !allowExtRef.current) {
         const cand = pickMember();
         if (cand) {
           try {
             await playTrackInContext(playlistId, cand.uri, dev);
-            // Kurz prüfen, ob wirklich UNSERE Playlist läuft (ein veralteter
-            // Cache-Eintrag könnte danebenliegen) – sonst normal über Fall B.
-            await sleep(450);
-            const chk = await getCurrentlyPlaying();
-            if (chk?.contextUri === ours) {
-              lockRound(cand, true);
-              return;
+            // Beim Kaltstart (kein laufender Kontext) kurz prüfen, ob wirklich
+            // unsere Playlist läuft – ein veralteter Cache-Eintrag könnte sonst
+            // danebenliegen.
+            if (!startedInOurs) {
+              await sleep(450);
+              const chk = await getCurrentlyPlaying();
+              if (chk?.contextUri !== ours) {
+                throw new Error("Kontext passt nicht");
+              }
             }
+            lockRound(cand, true);
+            return;
           } catch {
             /* Direktstart misslungen -> unten normal über den Kontext */
           }
+        } else if (memberListCompleteRef.current) {
+          // Alle bekannten Titel gespielt und Liste vollständig -> durch.
+          setPlaylistDone(true);
+          return;
         }
+        // sonst (Liste unvollständig) -> unten über die Warteschlange mehr finden.
       }
 
       // FALL B: Kontext sicherstellen und über die KOMMENDE Warteschlange (echte
@@ -328,6 +334,14 @@ export function Game({
           setPhase("idle");
           return;
         }
+      }
+
+      // Zufallsmodus sicherstellen, damit die Warteschlange gemischt ist (sonst
+      // liefe eine nach Jahr sortierte Playlist der Reihe nach).
+      try {
+        await setShuffle(true, dev);
+      } catch {
+        /* Shuffle ist optional */
       }
 
       // 2. Über die Warteschlange einen freien Titel finden und direkt anspringen.
