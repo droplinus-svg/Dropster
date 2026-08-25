@@ -81,11 +81,22 @@ export function Game({
   // Gemeldete Gesamtzahl der Playlist-Titel (auch im Dev-Mode zuverlaessig,
   // selbst wenn Spotify die Titel-Details verbirgt). Fuer die Ende-Anzeige.
   const [playlistTotal, setPlaylistTotal] = useState(0);
+  // Wie viele echte Titel der Playlist konnten wir lesen? (0 = Spotify verbirgt
+  // die Liste -> dann greift nur die Kontext-Prüfung.)
+  const [memberCount, setMemberCount] = useState(0);
   // Wie viele ECHTE Playlist-Titel wurden schon gespielt (keine Erweiterungen)?
   const playedMembersRef = useRef(0);
   // Zuletzt bekannte "echte" Lautstaerke (>0). Schutz davor, dass die App nach
   // dem stummen Vorbereiten versehentlich auf 0 haengen bleibt.
   const lastVolRef = useRef(70);
+  // Die ECHTEN Track-IDs dieser Playlist (wenn Spotify sie herausgibt – bei
+  // eigenen Playlists meist ja). Damit prüfen wir jeden Song gegen und lassen
+  // Fremd-Einstreuungen (Smart Shuffle) gar nicht erst als Rundensong zu.
+  const memberIdsRef = useRef<Set<string>>(new Set());
+  // Kennen wir die Liste vollständig? Nur dann darf ein Nicht-Mitglied hart
+  // abgelehnt werden (bei sehr großen Playlists kann die Liste unvollständig
+  // sein – dann verlassen wir uns nur auf den Kontext).
+  const memberListCompleteRef = useRef(false);
 
   useEffect(() => {
     (async () => {
@@ -98,13 +109,31 @@ export function Game({
         }
       }
       try {
-        const { total } = await getPlaylistMembers(playlistId);
+        const { members, total } = await getPlaylistMembers(playlistId);
         if (total > 0) setPlaylistTotal(total);
+        setMemberCount(members.length);
+        if (members.length) {
+          members.forEach((m) => memberIdsRef.current.add(m.id));
+          // Vollständig, wenn wir mindestens so viele wie die gemeldete
+          // Gesamtzahl haben (Spotify liefert max. ~100 pro Seite).
+          memberListCompleteRef.current = members.length >= total;
+        }
       } catch {
-        /* Gesamtzahl unbekannt – Ende erkennen wir am Kontext-Wechsel */
+        /* Titelliste nicht lesbar – dann greift nur die Kontext-Prüfung */
       }
     })();
   }, [spielrundeId, playlistId]);
+
+  // Gehört dieser Song sicher NICHT zur Playlist? Nur wenn wir die vollständige
+  // Titelliste kennen und der Song nicht darin ist.
+  function isForeignInjection(id: string | null): boolean {
+    return (
+      memberListCompleteRef.current &&
+      memberIdsRef.current.size > 0 &&
+      !!id &&
+      !memberIdsRef.current.has(id)
+    );
+  }
 
   // Sind alle Original-Titel der Playlist durchgespielt?
   function playlistExhausted(): boolean {
@@ -261,19 +290,22 @@ export function Game({
         }
       }
 
-      // 2. Innerhalb unseres Kontexts zum naechsten noch nicht gespielten Titel
-      //    weiterschalten – STUMM, damit nichts hoerbar durchlaeuft.
-      for (let i = 0; i < 30; i++) {
+      // 2. Innerhalb unseres Kontexts zum naechsten noch nicht gespielten
+      //    ECHTEN Playlist-Titel weiterschalten – STUMM.
+      let stableId: string | null = null;
+      let stableHits = 0;
+      for (let i = 0; i < 40; i++) {
         np = await getCurrentlyPlaying();
         const inOurs = np?.contextUri === ours;
+        const id = np?.id ?? null;
 
         if (!inOurs) {
           // Kontext hat unsere Playlist verlassen -> Spotify verlaengert sie
           // mit aehnlichen Songs (= Playlist zu Ende).
           if (allowExtRef.current) {
-            if (np?.id && np.id !== AMBIENT_ID && !played.has(np.id)) {
+            if (id && id !== AMBIENT_ID && !played.has(id)) {
               await unmute(dev);
-              lockRound(npToInfo(np), false);
+              lockRound(npToInfo(np!), false);
               return;
             }
           } else {
@@ -281,16 +313,34 @@ export function Game({
             setPlaylistDone(true);
             return;
           }
-        } else if (np?.id && np.id !== AMBIENT_ID && !played.has(np.id)) {
-          // Frischer Titel aus UNSERER Playlist gefunden -> hörbar machen.
-          // (Kein Zuruecksetzen auf 0:00 – das hoerbare "Zurueckspringen" war
-          // stoerender als die fehlende erste Sekunde.)
-          await unmute(dev);
-          lockRound(npToInfo(np), true);
-          return;
+        } else if (
+          id &&
+          id !== AMBIENT_ID &&
+          !played.has(id) &&
+          !isForeignInjection(id)
+        ) {
+          // Kandidat aus UNSERER Playlist. Vor dem Festlegen kurz auf Stabilitaet
+          // pruefen: denselben Titel ZWEIMAL in Folge sehen – gegen den kurzen
+          // Moment, in dem Spotify schon den neuen Kontext, aber noch den alten
+          // (fremden) Titel meldet.
+          if (id === stableId) {
+            stableHits += 1;
+          } else {
+            stableId = id;
+            stableHits = 1;
+          }
+          if (stableHits >= 2) {
+            await unmute(dev);
+            lockRound(npToInfo(np!), true);
+            return;
+          }
+          await sleep(300);
+          continue; // nur pruefen, NICHT weiterschalten
         }
 
-        // Sonst: einen weiter (stumm).
+        // Nicht passend (schon gespielt / Fremd-Einstreuung / Ambient) -> weiter.
+        stableId = null;
+        stableHits = 0;
         await mute(dev);
         await skipNext(dev);
         await sleep(450);
@@ -593,6 +643,11 @@ export function Game({
           <div className="footer-meta">
             <span>
               {playlistName} · Runde {round}
+              {memberCount > 0
+                ? ` · ${memberCount} Titel geprüft`
+                : playlistTotal > 0
+                  ? " · Titelliste verborgen"
+                  : ""}
             </span>
             <button className="linklike" onClick={onChangePlaylist}>
               Andere Playlist

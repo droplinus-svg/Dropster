@@ -18,10 +18,16 @@
 const MB = "https://musicbrainz.org/ws/2";
 const UA = `Dropster/0.1 ( ${process.env.MUSICBRAINZ_CONTACT ?? "unknown"} )`;
 
-// Hartes Gesamt-Zeitbudget der Funktion. Netlify bricht Funktionen nach ~10 s
-// mit "504 Inactivity Timeout" ab. Wir bleiben klar darunter und antworten
-// notfalls VORHER mit dem Spotify-Jahr, statt in den 504 zu laufen.
-const BUDGET_MS = 8500;
+// Hartes Gesamt-Zeitbudget der Funktion. Netlify bricht Funktionen nach ihrem
+// Limit (Standard 10 s) mit "504 Inactivity Timeout" ab. Wir bleiben klar
+// darunter und antworten notfalls VORHER mit dem Spotify-Jahr, statt in den
+// 504 zu laufen. Ueber die Umgebungsvariable MB_BUDGET_MS anpassbar: Wer bei
+// Netlify ein hoeheres Funktions-Limit hat (z. B. 26 s), kann hier z. B. 20000
+// setzen und bekommt dadurch deutlich seltener "MusicBrainz zu langsam".
+const BUDGET_MS = Math.max(
+  4000,
+  parseInt(process.env.MB_BUDGET_MS ?? "9000", 10) || 9000
+);
 
 // fetch mit hartem Timeout, damit eine einzelne haengende Anfrage nicht das
 // ganze Budget frisst.
