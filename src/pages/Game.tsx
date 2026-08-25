@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   getCurrentlyPlaying,
   getPlaylistMembers,
+  getQueue,
   pausePlayback,
   pickBestDeviceId,
   playTrack,
@@ -257,21 +258,15 @@ export function Game({
         // Liste unvollständig -> unten über den Kontext weiter.
       }
 
-      // FALL B: Titelliste unbekannt -> IM KONTEXT BLEIBEN und VORWÄRTS gehen.
-      // WICHTIG: Wir starten die Playlist NICHT jede Runde neu – das würde
-      // Spotifys Mischreihenfolge von vorn beginnen und genau die schon
-      // gespielten Titel wieder anspielen. Läuft unser Kontext bereits
-      // (pausiert vom Auflösen), gehen wir nur EINEN Titel weiter.
-      let np = await getCurrentlyPlaying();
+      // FALL B: Titelliste unbekannt -> im Kontext bleiben. Wir lesen die
+      // KOMMENDE Warteschlange (echte Playlist-Titel MIT Abspiel-Adresse) und
+      // springen DIREKT zum nächsten freien Titel. Gesperrte/schon gespielte
+      // Titel werden dabei LAUTLOS übersprungen (kein hörbares Durchschalten) –
+      // das ist der Fix für den Gruppen-Modus mit voller Sperrliste.
 
-      if (np?.contextUri === ours) {
-        // Weiter im laufenden Kontext -> ein Titel vor.
-        await skipNext(dev);
-        await sleep(600);
-        np = await getCurrentlyPlaying();
-      } else {
-        // Kontext ist (noch) nicht unsere Playlist (erste Runde / Weck-Song /
-        // Spotify hat verlängert) -> einmal starten und auf Übernahme warten.
+      // 1. Kontext sicherstellen (nur wenn nötig – NICHT jede Runde neu starten).
+      let np = await getCurrentlyPlaying();
+      if (np?.contextUri !== ours) {
         dev = await startPlaylist(playlistId);
         setDeviceId(dev);
         let switched = false;
@@ -292,41 +287,52 @@ export function Game({
         }
       }
 
-      // Sicherstellen, dass ein FRISCHER Titel unserer Playlist läuft. Im
-      // Normalfall passt schon der erste – nur falls er (nach Kontextwechsel/
-      // Verlängerung) fremd oder schon gespielt ist, gehen wir weiter vor.
-      for (let i = 0; i < 30; i++) {
-        const inOurs = np?.contextUri === ours;
-        const id = np?.id ?? null;
+      // 2. Über die Warteschlange einen freien Titel finden und direkt anspringen.
+      for (let attempt = 0; attempt < 6; attempt++) {
+        np = await getCurrentlyPlaying();
 
-        if (!inOurs) {
-          // Kontext hat unsere Playlist verlassen -> Spotify verlängert (Ende).
+        // Kontext verlassen -> Spotify verlängert die Playlist (= Ende).
+        if (np?.contextUri && np.contextUri !== ours) {
           if (allowExtRef.current) {
-            if (id && id !== AMBIENT_ID && !played.has(id)) {
-              lockRound(npToInfo(np!), false);
+            if (np.id && np.id !== AMBIENT_ID && !played.has(np.id)) {
+              lockRound(npToInfo(np), false);
               return;
             }
           } else {
             setPlaylistDone(true);
             return;
           }
-        } else if (
-          id &&
-          id !== AMBIENT_ID &&
-          !played.has(id) &&
-          !isForeignInjection(id)
-        ) {
-          lockRound(npToInfo(np!), true);
+        }
+
+        const q = await getQueue();
+        // Nächster freier Titel in Spielrichtung (aktueller + kommende).
+        const pool = [q.current, ...q.upcoming].filter(
+          (t): t is TrackInfo =>
+            !!t &&
+            !!t.uri &&
+            t.id !== AMBIENT_ID &&
+            !played.has(t.id) &&
+            !isForeignInjection(t.id)
+        );
+
+        if (pool.length) {
+          const cand = pool[0];
+          // Läuft der freie Titel schon? -> übernehmen. Sonst gezielt dorthin
+          // springen (überspringt gesperrte Titel davor lautlos).
+          if (np?.id !== cand.id) {
+            await playTrackInContext(playlistId, cand.uri, dev);
+          }
+          lockRound(cand, true);
           return;
         }
 
-        // Noch nicht passend -> einen Titel weiter.
+        // Im sichtbaren Fenster ist alles gesperrt/gespielt -> Fenster ein Stück
+        // vorschieben und erneut schauen (nur nötig, wenn fast alles dran war).
         await skipNext(dev);
-        await sleep(600);
-        np = await getCurrentlyPlaying();
+        await sleep(500);
       }
 
-      // Nichts Frisches gefunden.
+      // Nichts Frisches gefunden -> Playlist praktisch durch.
       if (!allowExtRef.current) {
         setPlaylistDone(true);
       } else {
