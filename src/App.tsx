@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { handleCallback, isLoggedIn, logout } from "./spotify/auth";
-import { type SpotifyPlaylist } from "./spotify/api";
 import { type Spielrunde } from "./lib/groups";
 import { Login } from "./pages/Login";
 import { Welcome } from "./pages/Welcome";
 import { GroupSelect } from "./pages/GroupSelect";
-import { PlaylistSelect } from "./pages/PlaylistSelect";
+import {
+  PlaylistSelect,
+  type PickedPlaylist,
+} from "./pages/PlaylistSelect";
 import { Game } from "./pages/Game";
 import { Onboarding } from "./pages/Onboarding";
 import { Splash } from "./pages/Splash";
@@ -27,8 +29,7 @@ type Screen =
 export function App() {
   const [screen, setScreen] = useState<Screen>("loading");
   const [error, setError] = useState<string | null>(null);
-  const [playlistId, setPlaylistId] = useState("");
-  const [playlistName, setPlaylistName] = useState("");
+  const [pickedPlaylists, setPickedPlaylists] = useState<PickedPlaylist[]>([]);
   const [spielrunde, setSpielrunde] = useState<Spielrunde | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   // Der inszenierte Startbildschirm läuft bei JEDEM Öffnen der App.
@@ -91,10 +92,9 @@ export function App() {
     })();
   }, []);
 
-  function pickPlaylist(pl: SpotifyPlaylist) {
+  function startGame(picked: PickedPlaylist[]) {
     setError(null);
-    setPlaylistId(pl.id);
-    setPlaylistName(pl.name);
+    setPickedPlaylists(picked);
     setScreen("game");
   }
 
@@ -155,17 +155,16 @@ export function App() {
       )}
       {screen === "playlists" && (
         <PlaylistSelect
-          onPick={pickPlaylist}
+          onStart={startGame}
           onLogout={() => {
             logout();
             setScreen("login");
           }}
         />
       )}
-      {screen === "game" && (
+      {screen === "game" && pickedPlaylists.length > 0 && (
         <Game
-          playlistId={playlistId}
-          playlistName={playlistName}
+          playlists={pickedPlaylists}
           spielrundeId={spielrunde?.id ?? null}
           onChangePlaylist={() => setScreen("playlists")}
           onEnd={() => setScreen("groups")}
