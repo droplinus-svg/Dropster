@@ -391,10 +391,11 @@ export function Game({
         );
 
         if (pool.length) {
-          const cand = pool[0];
-          // Gezielt zum freien Titel springen (überspringt gesperrte Titel davor
-          // lautlos) UND ihn sicher starten – wichtig, weil wir zuvor pausiert
-          // haben. Startet bei 0:00.
+          // ZUFÄLLIG aus dem sichtbaren Fenster wählen (NICHT pool[0]) – so ist
+          // die Reihenfolge auch dann gemischt, wenn Spotifys Shuffle auf dem
+          // iPhone nicht greift. Gezielt dorthin springen (gesperrte Titel davor
+          // werden lautlos übersprungen), startet bei 0:00.
+          const cand = pool[Math.floor(Math.random() * pool.length)];
           await playTrackInContext(playlistId, cand.uri, dev);
           lockRound(cand, true);
           return;
