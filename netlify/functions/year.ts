@@ -227,6 +227,75 @@ async function resolveByIsrc(
   return null;
 }
 
+// Titel von Zusätzen wie "- 2017 Remaster", "(Remastered)", "- Single Version"
+// befreien, damit die Suche die eigentliche Aufnahme findet.
+function cleanTitle(title: string): string {
+  return title
+    .replace(
+      /\s*[-–(].*?(remaster(ed)?|remastered version|version|single version|album version|radio edit|mono|stereo|deluxe|anniversary|edit|mix|live).*$/i,
+      ""
+    )
+    .replace(/\s*\((feat\.?|featuring|with)[^)]*\)/i, "")
+    .replace(/[()\[\]"]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function norm(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function nameMatches(a: string, b: string): boolean {
+  const na = norm(a);
+  const nb = norm(b);
+  return !!na && !!nb && (na === nb || na.startsWith(nb) || nb.startsWith(na));
+}
+
+// Fallback, wenn die ISRC nichts brachte: nach Titel + Interpret suchen und das
+// FRÜHESTE Erscheinungsdatum desselben Interpreten nehmen. So finden wir das
+// Originaljahr (z. B. 1977) auch bei Remaster-Fassungen, deren ISRC MusicBrainz
+// nicht kennt.
+async function resolveBySearch(
+  title: string,
+  artist: string,
+  deadline: number
+): Promise<Resolved | null> {
+  const t = cleanTitle(title);
+  const a = (artist.split(",")[0] || "").trim();
+  if (!t || !a) return null;
+  const query = `recording:"${t}" AND artist:"${a}"`;
+  const data = await mb(
+    `/recording?query=${encodeURIComponent(query)}&limit=25&fmt=json`,
+    deadline
+  );
+  const recs = data?.recordings ?? [];
+  let artistMbid: string | null = null;
+  const years: number[] = [];
+  for (const r of recs) {
+    const ac = r["artist-credit"]?.[0]?.artist;
+    if (!ac || !nameMatches(ac.name ?? "", a)) continue;
+    // Titel muss grob passen (keine völlig anderen Songs).
+    if (!nameMatches(r.title ?? "", t) && norm(r.title ?? "").indexOf(norm(t)) < 0)
+      continue;
+    artistMbid = artistMbid ?? ac.id ?? null;
+    const y = yearOf(r["first-release-date"]);
+    if (y) years.push(y);
+  }
+  if (!years.length) return null;
+  return {
+    year: Math.min(...years),
+    source: "musicbrainz",
+    confidence: "medium",
+    artistMbid,
+    // Suche ist etwas unschärfer als der ISRC-Weg -> nicht dauerhaft cachen.
+    partial: true,
+  };
+}
+
 interface InTrack {
   trackId: string;
   isrc: string | null;
@@ -260,23 +329,26 @@ export async function handler(event: { body: string | null }) {
       });
     }
 
-    // 2) Ohne ISRC ist MusicBrainz nicht befragbar.
-    if (!t.isrc) {
-      return json({
-        year: t.fallbackYear ?? null,
-        source: "spotify_fallback",
-        confidence: "low",
-        reason: "no_isrc",
-      });
-    }
-
-    // 3) MusicBrainz befragen – mit hartem Zeitbudget, damit wir NIE in
+    // 2) MusicBrainz befragen – mit hartem Zeitbudget, damit wir NIE in
     //    Netlifys 504-Timeout laufen.
     const deadline = Date.now() + BUDGET_MS;
     let resolved: Resolved | null = null;
     let mbErr: string | null = null;
     try {
-      resolved = await resolveByIsrc(t.isrc, deadline);
+      // a) Bester Weg: über die ISRC (genau).
+      if (t.isrc) resolved = await resolveByIsrc(t.isrc, deadline);
+      // b) Fallback: nach Titel + Interpret suchen (findet das Originaljahr
+      //    auch bei Remaster-Fassungen, deren ISRC MusicBrainz nicht kennt) –
+      //    solange noch genug Zeitbudget da ist.
+      if (
+        (!resolved || resolved.year == null) &&
+        t.title &&
+        t.artist &&
+        deadline - Date.now() > 1500
+      ) {
+        const bySearch = await resolveBySearch(t.title, t.artist, deadline);
+        if (bySearch && bySearch.year != null) resolved = bySearch;
+      }
     } catch (e) {
       mbErr = (e as Error).message;
     }
