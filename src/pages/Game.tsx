@@ -5,6 +5,7 @@ import {
   getPlaylistMembers,
   pickBestDeviceId,
   playTrack,
+  playTrackInContext,
   searchAmbientUri,
   setVolume,
   skipNext,
@@ -93,6 +94,9 @@ export function Game({
   // eigenen Playlists meist ja). Damit prüfen wir jeden Song gegen und lassen
   // Fremd-Einstreuungen (Smart Shuffle) gar nicht erst als Rundensong zu.
   const memberIdsRef = useRef<Set<string>>(new Set());
+  // Die vollständigen Titel (inkl. Abspiel-Adresse) – für den Direktstart bei
+  // eigenen Playlists, ganz ohne stummes Durchschalten.
+  const memberTracksRef = useRef<TrackInfo[]>([]);
   // Kennen wir die Liste vollständig? Nur dann darf ein Nicht-Mitglied hart
   // abgelehnt werden (bei sehr großen Playlists kann die Liste unvollständig
   // sein – dann verlassen wir uns nur auf den Kontext).
@@ -113,6 +117,7 @@ export function Game({
         if (total > 0) setPlaylistTotal(total);
         setMemberCount(members.length);
         if (members.length) {
+          memberTracksRef.current = members;
           members.forEach((m) => memberIdsRef.current.add(m.id));
           // Vollständig, wenn wir mindestens so viele wie die gemeldete
           // Gesamtzahl haben (Spotify liefert max. ~100 pro Seite).
@@ -138,6 +143,16 @@ export function Game({
   // Sind alle Original-Titel der Playlist durchgespielt?
   function playlistExhausted(): boolean {
     return playlistTotal > 0 && playedMembersRef.current >= playlistTotal;
+  }
+
+  // Einen noch nicht gespielten ECHTEN Titel der Playlist zufällig wählen
+  // (für den Direktstart bei eigenen Playlists).
+  function pickMember(): TrackInfo | null {
+    const free = memberTracksRef.current.filter(
+      (t) => t.id !== AMBIENT_ID && t.uri && !played.has(t.id)
+    );
+    if (!free.length) return null;
+    return free[Math.floor(Math.random() * free.length)];
   }
 
   // Einen Titel als aktuelle Runde festhalten. `isMember` = echter Playlist-Titel
@@ -263,6 +278,26 @@ export function Game({
         setDeviceId(dev);
       }
 
+      // FALL A: Eigene Playlist mit vollständig bekannter Titelliste -> den
+      // besten Weg nehmen: gezielt EINEN noch nicht gespielten Titel im
+      // Playlist-Kontext starten. Kein Durchschalten, kein Stummschalten (das
+      // auf dem iPhone unzuverlässig war und die kurz angespielten Songs
+      // verursachte), und der Song startet bei 0:00.
+      if (memberListCompleteRef.current && !allowExtRef.current) {
+        const cand = pickMember();
+        if (!cand) {
+          // Alle echten Titel gespielt -> Playlist durch.
+          setPlaylistDone(true);
+          return;
+        }
+        await playTrackInContext(playlistId, cand.uri, dev);
+        lockRound(cand, true);
+        return;
+      }
+
+      // FALL B: Verborgene Titelliste ODER Erweiterungen erlaubt -> wir kennen
+      // die Titel nicht und müssen im Kontext stumm zum nächsten freien Titel
+      // durchschalten.
       // 1. Sicherstellen, dass UNSERE Playlist als Kontext laeuft. Laeuft gerade
       //    etwas anderes (fremder Weck-Song, Ambient, andere Playlist), starten
       //    wir unsere Playlist STUMM und warten, bis Spotify sie uebernommen hat.
@@ -629,6 +664,15 @@ export function Game({
         )}
       </div>
 
+      {!deviceLost && !playlistDone && memberCount === 0 && playlistTotal > 0 && (
+        <div className="hint-box">
+          <b>Hinweis:</b> Bei dieser Playlist verbirgt Spotify die Titelliste –
+          deshalb können vereinzelt fremde Songs auftauchen. Für volle Kontrolle
+          die Playlist einmal in dein eigenes Spotify kopieren und die Kopie hier
+          wählen.
+        </div>
+      )}
+
       {msg && !deviceLost && (
         <div className="panel">
           <p className="muted">{msg}</p>
@@ -643,16 +687,22 @@ export function Game({
           <div className="footer-meta">
             <span>
               {playlistName} · Runde {round}
-              {memberCount > 0
-                ? ` · ${memberCount} Titel geprüft`
-                : playlistTotal > 0
-                  ? " · Titelliste verborgen"
-                  : ""}
             </span>
             <button className="linklike" onClick={onChangePlaylist}>
               Andere Playlist
             </button>
           </div>
+          {(memberCount > 0 || playlistTotal > 0) && (
+            <div
+              className={
+                "check-status " + (memberCount > 0 ? "ok" : "warn")
+              }
+            >
+              {memberCount > 0
+                ? `✓ ${memberCount} Titel dieser Playlist geprüft`
+                : "⚠ Titelliste von Spotify verborgen"}
+            </div>
+          )}
         </>
       )}
     </div>

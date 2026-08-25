@@ -897,3 +897,26 @@ select, input {
   color: var(--muted);
   font-weight: 600;
 }
+
+/* ---- Hinweis: Playlist ohne lesbare Titelliste ---- */
+.hint-box {
+  background: rgba(224, 170, 62, 0.12);
+  border: 1px solid rgba(224, 170, 62, 0.35);
+  color: #e9d6a8;
+  border-radius: 12px;
+  padding: 11px 13px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.hint-box b { color: #f4e6c2; }
+
+/* ---- Status: ist die Playlist gegen Fremdsongs geprüft? ---- */
+.check-status {
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  margin-top: -18px;
+  margin-bottom: 22px;
+}
+.check-status.ok { color: var(--accent); }
+.check-status.warn { color: #e5b95b; }
