@@ -247,6 +247,25 @@ export async function getCurrentUserId(): Promise<string | null> {
   }
 }
 
+// Wer ist gerade in Dropster mit Spotify eingeloggt? (Zur Kontrolle, dass es
+// wirklich das Konto ist, in dem die Playlists liegen.)
+export async function getMyProfile(): Promise<{
+  id: string | null;
+  name: string | null;
+}> {
+  try {
+    const data = await api<
+      { id?: string; display_name?: string } | undefined
+    >("/me");
+    return {
+      id: data?.id ?? null,
+      name: data?.display_name ?? data?.id ?? null,
+    };
+  } catch {
+    return { id: null, name: null };
+  }
+}
+
 // ISRC eines einzelnen Titels holen. Der Einzeltitel-Endpoint /tracks/{id}
 // liefert external_ids.isrc zuverlaessig und ist – anders als die
 // Playlist-Endpoints – im Dev-Mode nicht gesperrt. Wird genutzt, um die ISRC

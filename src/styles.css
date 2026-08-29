@@ -977,3 +977,14 @@ select, input {
   gap: 10px;
   font-size: 13px;
 }
+
+/* ---- Angemeldetes Spotify-Konto ---- */
+.account-line {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #cdd5df;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 9px 11px;
+}
+.account-line b { color: var(--accent); }

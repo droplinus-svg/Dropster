@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { getMyPlaylists, type SpotifyPlaylist } from "../spotify/api";
+import {
+  getMyPlaylists,
+  getMyProfile,
+  type SpotifyPlaylist,
+} from "../spotify/api";
 
 export interface PickedPlaylist {
   id: string;
@@ -20,12 +24,18 @@ export function PlaylistSelect({
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [account, setAccount] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
     setMsg("");
     try {
-      setPlaylists(await getMyPlaylists());
+      const [pls, profile] = await Promise.all([
+        getMyPlaylists(),
+        getMyProfile(),
+      ]);
+      setPlaylists(pls);
+      setAccount(profile.name);
     } catch (e) {
       setMsg((e as Error).message);
     } finally {
@@ -59,6 +69,13 @@ export function PlaylistSelect({
     <div className="stack">
       <div className="panel stack">
         <strong>Deine Playlists</strong>
+        {account && (
+          <div className="account-line">
+            Angemeldet als <b>{account}</b>. Werden neue Playlists nicht
+            angezeigt, prüfe, ob das auch das Konto ist, in dem du sie
+            hinzugefügt hast.
+          </div>
+        )}
         <p className="muted">
           Wähle eine <strong>oder mehrere</strong> deiner Spotify-Playlists. Bei
           mehreren kommt pro Runde ein zufälliger Song aus einer zufälligen der
