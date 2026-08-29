@@ -968,3 +968,12 @@ select, input {
   padding: 15px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
 }
+
+/* ---- Playlist-Liste: Anzahl + Aktualisieren ---- */
+.pl-reloadrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}

@@ -21,16 +21,20 @@ export function PlaylistSelect({
   const [msg, setMsg] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  async function load() {
+    setLoading(true);
+    setMsg("");
+    try {
+      setPlaylists(await getMyPlaylists());
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    (async () => {
-      try {
-        setPlaylists(await getMyPlaylists());
-      } catch (e) {
-        setMsg((e as Error).message);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    load();
   }, []);
 
   function toggle(id: string) {
@@ -65,7 +69,20 @@ export function PlaylistSelect({
           <strong>Hitster-Playlists</strong> gibt es auch auf Spotify. Füg eine
           davon deinem Konto hinzu – dann spielt ihr mit exakt denselben Songs.
         </p>
-        {loading && <p className="muted">Lade Playlists …</p>}
+        <div className="pl-reloadrow">
+          <span className="muted">
+            {loading
+              ? "Lade Playlists …"
+              : `${playlists.length} Playlists gefunden`}
+          </span>
+          <button
+            className="linklike"
+            disabled={loading}
+            onClick={load}
+          >
+            ↻ Aktualisieren
+          </button>
+        </div>
         {msg && <p className="muted">{msg}</p>}
         <div className="stack">
           {[...playlists]
