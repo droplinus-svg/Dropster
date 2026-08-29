@@ -13,6 +13,9 @@ async function api<T>(
   if (!token) throw new Error("Nicht eingeloggt.");
   const res = await fetch(`${BASE}${path}`, {
     ...init,
+    // Immer frisch laden – sonst liefert iOS Safari (bes. als Homescreen-App)
+    // eine gecachte Antwort, und neue/entfernte Playlists würden nicht auftauchen.
+    cache: "no-store",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
@@ -372,7 +375,9 @@ export async function playTrackInContext(
 // ---------- Playlists ----------
 export async function getMyPlaylists(): Promise<SpotifyPlaylist[]> {
   const out: SpotifyPlaylist[] = [];
-  let url = "/me/playlists?limit=50";
+  // Zeitstempel als Cache-Buster, damit auch keine Zwischenstation eine alte
+  // Liste liefert.
+  let url = `/me/playlists?limit=50&ts=${Date.now()}`;
   // Paginierung
   for (;;) {
     const data = await api<{
