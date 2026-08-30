@@ -399,22 +399,20 @@ export async function getPlaylistBrief(
   id: string
 ): Promise<{ id: string; name: string; total: number } | null> {
   // Volle Antwort (KEIN fields-Filter) – Feld-Projektionen scheitern im
-  // Dev-Mode gerne. Wir picken uns Name + Titelzahl selbst heraus.
-  try {
-    const data = await api<{
-      id?: string;
-      name?: string;
-      tracks?: { total?: number };
-    }>(`/playlists/${id}?ts=${Date.now()}`);
-    if (!data?.name) return null;
-    return {
-      id: data.id ?? id,
-      name: data.name,
-      total: data.tracks?.total ?? 0,
-    };
-  } catch {
-    return null;
-  }
+  // Dev-Mode gerne. Wir picken uns Name + Titelzahl selbst heraus. Fehler
+  // werden bewusst NICHT verschluckt, damit der echte Grund (403/404/…) sichtbar
+  // wird.
+  const data = await api<{
+    id?: string;
+    name?: string;
+    tracks?: { total?: number };
+  }>(`/playlists/${id}?ts=${Date.now()}`);
+  if (!data?.name) return null;
+  return {
+    id: data.id ?? id,
+    name: data.name,
+    total: data.tracks?.total ?? 0,
+  };
 }
 
 export async function getMyPlaylists(): Promise<SpotifyPlaylist[]> {
