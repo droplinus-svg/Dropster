@@ -886,6 +886,27 @@ select, input {
   color: var(--muted);
   max-width: 300px;
 }
+.prep-bar {
+  width: min(240px, 80%);
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.prep-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+.prep-abort {
+  margin-top: 6px;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-size: 13px;
+}
 @media (prefers-reduced-motion: reduce) {
   .loading-eq i { animation: none; }
 }

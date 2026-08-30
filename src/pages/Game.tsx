@@ -66,6 +66,15 @@ export function Game({
   const [round, setRound] = useState(0);
   const [busy, setBusy] = useState(false);
   const [preparing, setPreparing] = useState(false);
+  // Live-Rückmeldung während des (ggf. längeren) Vorbereitens.
+  const [prepStatus, setPrepStatus] = useState("");
+  const [prepStep, setPrepStep] = useState<{ done: number; total: number } | null>(
+    null
+  );
+  const [showAbort, setShowAbort] = useState(false);
+  // Wird gesetzt, wenn der Nutzer das Vorbereiten abbricht – die Schleifen prüfen
+  // das und steigen sauber aus.
+  const abortPrepRef = useRef(false);
   const [recheck, setRecheck] = useState(false);
   const [msg, setMsg] = useState("");
   const [playlistDone, setPlaylistDone] = useState(false);
@@ -95,6 +104,17 @@ export function Game({
     playlists.length === 1
       ? playlists[0]?.name
       : `${playlists.length} Listen`;
+
+  // Dauert das Vorbereiten länger, blenden wir nach ~15 s einen Ausweg ein, damit
+  // man nie das Gefühl hat, gefangen zu sein.
+  useEffect(() => {
+    if (!preparing) {
+      setShowAbort(false);
+      return;
+    }
+    const t = setTimeout(() => setShowAbort(true), 15000);
+    return () => clearTimeout(t);
+  }, [preparing]);
 
   useEffect(() => {
     (async () => {
@@ -339,8 +359,11 @@ export function Game({
       setPlaylistDone(true);
       return;
     }
+    abortPrepRef.current = false;
     setBusy(true);
     setPreparing(true);
+    setPrepStep(null);
+    setPrepStatus("Verbinde mit Spotify …");
 
     try {
       let dev = deviceId;
@@ -358,14 +381,11 @@ export function Game({
       // sonst schluckt ein kaltes iPhone-Spotify den ersten Song.
       await wakeDevice(dev);
 
-      // 1. Anlernen – aber NUR so viel wie nötig, damit es egal ist, wie viele
-      //    Listen gewählt sind. Regeln:
-      //    • Ist schon etwas Spielbares im Topf (z. B. lesbare Liste), kommt der
-      //      erste Song SOFORT – ohne Anlernen.
-      //    • Sonst lernen wir Listen an, bis wir etwas haben – zeitlich gedeckelt.
-      //    • Ab der 2. Runde lernen wir pro Runde HÖCHSTENS EINE weitere Liste
-      //      nach, damit der Topf über die Zeit wächst, ohne je lange zu blocken.
-      let seededSomething = false;
+      // 1. Anlernen: ALLE noch unbekannten Listen gründlich vorbereiten, BEVOR der
+      //    erste Song kommt (kompletterer Ratetopf ab Song 1). Die längere Zeit
+      //    ist ok, weil der Nutzer live sieht, welche Liste gerade geladen wird –
+      //    und jederzeit abbrechen kann. Bereits geladene Listen (seededRef)
+      //    werden übersprungen, spätere Runden brauchen also nicht mehr anzulernen.
       const nextUnseeded = () =>
         playlists.find((pl) => {
           if (seededRef.current.has(pl.id)) return false;
@@ -374,44 +394,45 @@ export function Game({
           return total > 0 ? known < total : known === 0;
         });
 
-      if (!pickMember()) {
-        // Noch nichts spielbar -> Listen anlernen, bis der Topf etwas hergibt.
-        const seedDeadline = Date.now() + 7000;
-        let pl = nextUnseeded();
-        while (pl && Date.now() < seedDeadline) {
-          try {
-            await seedPlaylist(pl.id, dev, 4000);
-            seededSomething = true;
-          } catch {
-            /* diese Liste konnten wir nicht anlernen */
-          }
-          seededRef.current.add(pl.id);
-          if (pickMember()) break;
-          pl = nextUnseeded();
+      const toSeed = playlists.filter((pl) => {
+        if (seededRef.current.has(pl.id)) return false;
+        const total = listTotalsRef.current.get(pl.id) ?? 0;
+        const known = knownForList(pl.id);
+        return total > 0 ? known < total : known === 0;
+      });
+
+      let seededSomething = false;
+      for (let i = 0; i < toSeed.length; i++) {
+        if (abortPrepRef.current) break;
+        const pl = toSeed[i];
+        setPrepStep({ done: i, total: toSeed.length });
+        setPrepStatus(
+          toSeed.length > 1
+            ? `Lerne „${pl.name}" (Liste ${i + 1} von ${toSeed.length}) …`
+            : `Lerne „${pl.name}" …`
+        );
+        try {
+          await seedPlaylist(pl.id, dev, 12000);
+          seededSomething = true;
+        } catch {
+          /* diese Liste konnten wir nicht anlernen */
         }
-        // Listen, die wir aus Zeitgründen nicht mehr geschafft haben, bleiben
-        // „unseeded" und werden in späteren Runden nachgeholt.
-      } else if (round > 0) {
-        // Schon spielbar und nicht der allererste Song -> genau EINE Liste
-        // nachlernen, damit der Topf wächst.
-        const pl = nextUnseeded();
-        if (pl) {
-          try {
-            await seedPlaylist(pl.id, dev, 4000);
-            seededSomething = true;
-          } catch {
-            /* egal */
-          }
-          seededRef.current.add(pl.id);
-        }
+        // Nur als erledigt merken, wenn NICHT abgebrochen – sonst später nachholen.
+        if (!abortPrepRef.current) seededRef.current.add(pl.id);
+        setMemberCount(memberTracksRef.current.length);
       }
-      // Sichtbare Topf-Größe aktualisieren.
-      setMemberCount(memberTracksRef.current.length);
+      setPrepStep(null);
+
+      if (abortPrepRef.current) {
+        setPhase("idle");
+        return;
+      }
 
       // Falls angelernt wurde: kurz zur Ruhe kommen lassen (das Anlernen hat
       // gerade Kontexte angespielt/pausiert), sonst kollidiert der erste echte
       // Start mit dem letzten Lern-Vorgang.
       if (seededSomething) {
+        setPrepStatus("Gleich geht's los …");
         try {
           await pausePlayback(dev);
         } catch {
@@ -419,6 +440,7 @@ export function Game({
         }
         await sleep(500);
       }
+      setPrepStatus("Starte Song …");
 
       // 2. Gibt es überhaupt einen freien Titel? Wenn NICHT:
       //    • Sind noch Listen NICHT angelernt (Zeitbudget) -> kein „durchgespielt",
@@ -443,13 +465,22 @@ export function Game({
       // abspielbarer Titel (Play-Befehl abgelehnt) fliegt aus dem Topf.
       let cand: PoolTrack | null = first;
       let deviceTrouble = false;
-      // Harter Zeitdeckel: nach spätestens ~14 s brechen wir ab und melden das,
-      // statt endlos in „Song wird geladen" hängen zu bleiben.
-      const deadline = Date.now() + 14000;
-      for (let picks = 0; picks < 6 && cand && Date.now() < deadline; picks++) {
+      // Großzügiger Zeitdeckel: Wir versuchen bis zu ~30 s, den ersten Song
+      // wirklich zum Laufen zu bringen. Das ist ok, weil der Nutzer sieht, dass
+      // es arbeitet, und nach ~15 s einen „Nochmal"-Ausweg bekommt.
+      const deadline = Date.now() + 30000;
+      for (
+        let picks = 0;
+        picks < 8 && cand && Date.now() < deadline && !abortPrepRef.current;
+        picks++
+      ) {
         let advanced = false;
 
-        for (let attempt = 0; attempt < 3 && Date.now() < deadline; attempt++) {
+        for (
+          let attempt = 0;
+          attempt < 3 && Date.now() < deadline && !abortPrepRef.current;
+          attempt++
+        ) {
           // 1) Play-Befehl senden.
           try {
             await playTrackInContext(cand.playlistId, cand.uri, dev);
@@ -473,7 +504,7 @@ export function Game({
           //    contextUri schon, obwohl noch der (pausierte) Lern-Song drin hängt.
           //    Echt gestartet ist es nur, wenn GENAU unser Ziel-Titel LÄUFT.
           let started = false;
-          for (let p = 0; p < 7; p++) {
+          for (let p = 0; p < 7 && !abortPrepRef.current; p++) {
             await sleep(400);
             const chk = await getCurrentlyPlaying();
             if (chk?.id === cand.id && chk.isPlaying) {
@@ -501,6 +532,12 @@ export function Game({
 
         // Nach 3 Versuchen an diesem Titel: nächsten Titel probieren.
         if (!advanced) cand = pickMember();
+      }
+
+      // Vom Nutzer abgebrochen -> still zurück, keine Fehlermeldung.
+      if (abortPrepRef.current) {
+        setPhase("idle");
+        return;
       }
 
       // Es GÄBE freie Titel, aber der Start klappte gerade nicht.
@@ -658,10 +695,40 @@ export function Game({
               <i />
               <i />
             </div>
-            <div className="loading-title">Song wird geladen …</div>
-            <div className="loading-sub">
-              Spotify sucht den nächsten Titel – einen Moment bitte
+            <div className="loading-title">
+              {prepStatus || "Song wird geladen …"}
             </div>
+            {prepStep && prepStep.total > 1 ? (
+              <>
+                <div className="prep-bar" aria-hidden="true">
+                  <span
+                    style={{
+                      width: `${Math.round(
+                        ((prepStep.done + 0.5) / prepStep.total) * 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <div className="loading-sub">
+                  {prepStep.done + 1} von {prepStep.total} Listen · schon{" "}
+                  {memberCount} Songs gefunden
+                </div>
+              </>
+            ) : (
+              <div className="loading-sub">
+                Einen Moment – Dropster bereitet das Spiel vor
+              </div>
+            )}
+            {showAbort && (
+              <button
+                className="linklike prep-abort"
+                onClick={() => {
+                  abortPrepRef.current = true;
+                }}
+              >
+                Zu lange? Abbrechen &amp; neu versuchen
+              </button>
+            )}
           </div>
         )}
 
