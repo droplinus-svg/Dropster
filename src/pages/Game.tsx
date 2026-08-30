@@ -301,16 +301,25 @@ export function Game({
   async function wakeDevice(dev: string, force = false): Promise<void> {
     if (deviceWarmRef.current && !force) return;
     try {
+      const devs = await getDevices();
+      // Läuft schon irgendein Gerät aktiv (z. B. weil in Spotify gerade ein Song
+      // lief)? Dann NICHT anfassen – ein Transfer würde es pausieren und Connect
+      // durcheinanderbringen. Das war genau der Grund, warum der erste Versuch
+      // scheiterte und erst der zweite klappte.
+      if (devs.some((d) => d.is_active)) {
+        deviceWarmRef.current = true;
+        return;
+      }
+      // Nur ein WIRKLICH schlafendes Gerät aktiv schalten.
       await transferPlayback(dev);
     } catch {
-      /* Transfer optional – wenn er scheitert, versuchen wir es trotzdem */
+      /* Transfer optional */
     }
     for (let i = 0; i < 8; i++) {
       await sleep(350);
       try {
         const devs = await getDevices();
-        const d = devs.find((x) => x.id === dev);
-        if (d?.is_active) break;
+        if (devs.some((d) => d.is_active)) break;
       } catch {
         /* egal */
       }
@@ -381,11 +390,14 @@ export function Game({
       // abspielbarer Titel (Play-Befehl abgelehnt) fliegt aus dem Topf.
       let cand: PoolTrack | null = first;
       let deviceTrouble = false;
-      for (let picks = 0; picks < 6 && cand; picks++) {
+      // Harter Zeitdeckel: nach spätestens ~14 s brechen wir ab und melden das,
+      // statt endlos in „Song wird geladen" hängen zu bleiben.
+      const deadline = Date.now() + 14000;
+      for (let picks = 0; picks < 6 && cand && Date.now() < deadline; picks++) {
         const ours = `spotify:playlist:${cand.playlistId}`;
         let advanced = false;
 
-        for (let attempt = 0; attempt < 3; attempt++) {
+        for (let attempt = 0; attempt < 3 && Date.now() < deadline; attempt++) {
           // 1) Play-Befehl senden.
           try {
             await playTrackInContext(cand.playlistId, cand.uri, dev);
