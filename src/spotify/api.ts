@@ -392,6 +392,29 @@ export async function playTrackInContext(
 }
 
 // ---------- Playlists ----------
+// Eine EINZELNE Playlist per ID abfragen (Name + Titelzahl). Dieser Endpunkt
+// ist – anders als /me/playlists – NICHT vom Cache-Problem betroffen und liefert
+// den aktuellen Stand. So kann man eine Playlist per Link zuverlässig hinzufügen.
+export async function getPlaylistBrief(
+  id: string
+): Promise<{ id: string; name: string; total: number } | null> {
+  try {
+    const data = await api<{
+      id?: string;
+      name?: string;
+      tracks?: { total?: number };
+    }>(`/playlists/${id}?fields=id,name,tracks(total)&ts=${Date.now()}`);
+    if (!data?.name) return null;
+    return {
+      id: data.id ?? id,
+      name: data.name,
+      total: data.tracks?.total ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getMyPlaylists(): Promise<SpotifyPlaylist[]> {
   const out: SpotifyPlaylist[] = [];
   // Zeitstempel als Cache-Buster, damit auch keine Zwischenstation eine alte

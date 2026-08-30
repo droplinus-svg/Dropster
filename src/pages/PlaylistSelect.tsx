@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   getMyPlaylists,
   getMyProfile,
+  getPlaylistBrief,
   type SpotifyPlaylist,
 } from "../spotify/api";
 
@@ -10,9 +11,24 @@ export interface PickedPlaylist {
   name: string;
 }
 
-// Playlist-Auswahl: der Spielleiter wählt eine ODER MEHRERE Playlists. Bei
-// mehreren kommt pro Runde ein zufälliger Song aus einer zufälligen der
-// gewählten Listen.
+interface Row {
+  id: string;
+  name: string;
+  total: number;
+}
+
+// Spotify-Playlist-Link oder -URI in die reine Playlist-ID zerlegen.
+function parsePlaylistId(input: string): string | null {
+  const s = input.trim();
+  const m = s.match(/playlist[:/]([A-Za-z0-9]+)/);
+  if (m) return m[1];
+  if (/^[A-Za-z0-9]{16,}$/.test(s)) return s;
+  return null;
+}
+
+// Playlist-Auswahl: eine ODER mehrere Listen wählen. Weitergehende Werkzeuge
+// (Konto prüfen, per Link ergänzen, neu laden) sind hinter „Playlist nicht
+// dabei?" eingeklappt, damit die Startmaske schlank bleibt.
 export function PlaylistSelect({
   onStart,
   onLogout,
@@ -21,10 +37,15 @@ export function PlaylistSelect({
   onLogout: () => void;
 }) {
   const [playlists, setPlaylists] = useState<SpotifyPlaylist[]>([]);
+  const [manual, setManual] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [account, setAccount] = useState<string | null>(null);
+  const [link, setLink] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addMsg, setAddMsg] = useState("");
+  const [showMore, setShowMore] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -47,6 +68,24 @@ export function PlaylistSelect({
     load();
   }, []);
 
+  const rows: Row[] = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Row[] = [];
+    for (const r of manual) {
+      if (!seen.has(r.id)) {
+        seen.add(r.id);
+        out.push(r);
+      }
+    }
+    for (const pl of playlists) {
+      if (!seen.has(pl.id)) {
+        seen.add(pl.id);
+        out.push({ id: pl.id, name: pl.name, total: pl.tracks?.total ?? 0 });
+      }
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name, "de"));
+  }, [manual, playlists]);
+
   function toggle(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -56,10 +95,38 @@ export function PlaylistSelect({
     });
   }
 
+  async function addByLink() {
+    setAddMsg("");
+    const id = parsePlaylistId(link);
+    if (!id) {
+      setAddMsg("Das sieht nicht nach einem Playlist-Link aus.");
+      return;
+    }
+    setAdding(true);
+    try {
+      const brief = await getPlaylistBrief(id);
+      if (!brief) {
+        setAddMsg("Playlist nicht gefunden oder nicht zugänglich.");
+        return;
+      }
+      setManual((prev) =>
+        prev.some((r) => r.id === brief.id) ? prev : [brief, ...prev]
+      );
+      setSelected((prev) => new Set(prev).add(brief.id));
+      setLink("");
+      setAddMsg(`„${brief.name}“ hinzugefügt.`);
+    } catch (e) {
+      setAddMsg((e as Error).message);
+    } finally {
+      setAdding(false);
+    }
+  }
+
   function start() {
-    const picked = playlists
-      .filter((pl) => selected.has(pl.id))
-      .map((pl) => ({ id: pl.id, name: pl.name }));
+    const byId = new Map(rows.map((r) => [r.id, r.name]));
+    const picked = [...selected]
+      .filter((id) => byId.has(id))
+      .map((id) => ({ id, name: byId.get(id) as string }));
     if (picked.length) onStart(picked);
   }
 
@@ -69,59 +136,89 @@ export function PlaylistSelect({
     <div className="stack">
       <div className="panel stack">
         <strong>Deine Playlists</strong>
-        {account && (
-          <div className="account-line">
-            Angemeldet als <b>{account}</b>. Werden neue Playlists nicht
-            angezeigt, prüfe, ob das auch das Konto ist, in dem du sie
-            hinzugefügt hast.
+        <p className="muted">
+          Wähle eine oder mehrere Listen – gespielt wird zufällig quer durch.
+        </p>
+
+        {loading && <p className="muted">Lade Playlists …</p>}
+        {msg && <p className="muted">{msg}</p>}
+
+        <div className="stack">
+          {rows.map((r) => {
+            const on = selected.has(r.id);
+            return (
+              <button
+                key={r.id}
+                className={"pl-pick" + (on ? " on" : "")}
+                onClick={() => toggle(r.id)}
+              >
+                <span className="pl-check" aria-hidden="true">
+                  {on ? "✓" : ""}
+                </span>
+                <span className="pl-name">
+                  {r.name} · {r.total || "?"} Songs
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Dezenter Auslöser – bewusst KEIN Button-Look, damit er nicht mit den
+            Start-Aktionen verwechselt wird. */}
+        <button
+          className="pl-more-toggle"
+          onClick={() => setShowMore((v) => !v)}
+        >
+          Playlist nicht dabei?
+        </button>
+
+        {showMore && (
+          <div className="more-panel">
+            <div className="muted" style={{ fontSize: 13 }}>
+              Spotify zeigt neue Listen oft verzögert. Hier kannst du nachhelfen.
+            </div>
+
+            {account && (
+              <div className="account-line">
+                Angemeldet als <b>{account}</b>
+              </div>
+            )}
+
+            <div className="pl-addrow">
+              <input
+                type="text"
+                inputMode="url"
+                placeholder="Playlist-Link einfügen"
+                value={link}
+                onChange={(e) => setLink(e.target.value)}
+              />
+              <button
+                className="pl-addbtn"
+                disabled={adding || !link.trim()}
+                onClick={addByLink}
+              >
+                {adding ? "…" : "Hinzufügen"}
+              </button>
+            </div>
+            <div className="muted" style={{ fontSize: 12 }}>
+              In Spotify: Playlist → „…" → Teilen → Link kopieren.
+            </div>
+            {addMsg && (
+              <div className="muted" style={{ fontSize: 13 }}>
+                {addMsg}
+              </div>
+            )}
+
+            <button className="linklike" disabled={loading} onClick={load}>
+              ↻ Liste neu laden
+            </button>
+
+            <div className="muted" style={{ fontSize: 12 }}>
+              Tipp: Die offiziellen Hitster-Playlists gibt es auch auf Spotify –
+              füg eine deinem Konto hinzu, dann spielt ihr mit denselben Songs.
+            </div>
           </div>
         )}
-        <p className="muted">
-          Wähle eine <strong>oder mehrere</strong> deiner Spotify-Playlists. Bei
-          mehreren kommt pro Runde ein zufälliger Song aus einer zufälligen der
-          gewählten Listen – ein bunter gemeinsamer Ratetopf.
-        </p>
-        <p className="muted">
-          <strong>Insider-Tipp:</strong> Die offiziellen{" "}
-          <strong>Hitster-Playlists</strong> gibt es auch auf Spotify. Füg eine
-          davon deinem Konto hinzu – dann spielt ihr mit exakt denselben Songs.
-        </p>
-        <div className="pl-reloadrow">
-          <span className="muted">
-            {loading
-              ? "Lade Playlists …"
-              : `${playlists.length} Playlists gefunden`}
-          </span>
-          <button
-            className="linklike"
-            disabled={loading}
-            onClick={load}
-          >
-            ↻ Aktualisieren
-          </button>
-        </div>
-        {msg && <p className="muted">{msg}</p>}
-        <div className="stack">
-          {[...playlists]
-            .sort((a, b) => a.name.localeCompare(b.name, "de"))
-            .map((pl) => {
-              const on = selected.has(pl.id);
-              return (
-                <button
-                  key={pl.id}
-                  className={"pl-pick" + (on ? " on" : "")}
-                  onClick={() => toggle(pl.id)}
-                >
-                  <span className="pl-check" aria-hidden="true">
-                    {on ? "✓" : ""}
-                  </span>
-                  <span className="pl-name">
-                    {pl.name} · {pl.tracks?.total ?? "?"} Songs
-                  </span>
-                </button>
-              );
-            })}
-        </div>
       </div>
 
       {count > 0 && (

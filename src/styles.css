@@ -988,3 +988,48 @@ select, input {
   padding: 9px 11px;
 }
 .account-line b { color: var(--accent); }
+
+/* ---- Playlist per Link hinzufügen ---- */
+.pl-addbox {
+  background: rgba(29, 185, 84, 0.08);
+  border: 1px solid rgba(29, 185, 84, 0.25);
+  border-radius: 14px;
+  padding: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pl-addtitle { font-weight: 800; font-size: 15px; color: var(--text); }
+.pl-addrow { display: flex; gap: 8px; }
+.pl-addrow input { flex: 1; padding: 12px; }
+.pl-addbtn {
+  width: auto;
+  flex: none;
+  padding: 12px 16px;
+  background: var(--accent);
+  color: #04180d;
+  font-weight: 800;
+}
+
+/* ---- Dezenter Auslöser für die erweiterten Playlist-Werkzeuge ---- */
+.pl-more-toggle {
+  width: auto;
+  align-self: flex-start;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 6px 2px;
+}
+.pl-more-toggle:active { transform: none; }
+.more-panel {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #242a33;
+  border-radius: 12px;
+  padding: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
