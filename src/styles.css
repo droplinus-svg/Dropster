@@ -956,6 +956,30 @@ select, input {
   border-color: var(--accent);
 }
 .pl-name { flex: 1; min-width: 0; }
+.pl-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.pl-row .pl-pick { flex: 1; min-width: 0; }
+.pl-hide {
+  flex: none;
+  width: 46px;
+  background: #171a21;
+  border: 1px solid #2a2f3a;
+  color: #e5b95b;
+  border-radius: 12px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+.pl-hide:active { background: rgba(229, 185, 91, 0.15); }
+.pl-manage-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
 .pl-start {
   position: sticky;
   bottom: max(12px, env(safe-area-inset-bottom));

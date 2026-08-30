@@ -17,6 +17,28 @@ interface Row {
   total: number;
 }
 
+// Vom Nutzer in Dropster ausgeblendete Listen. Nötig, weil Spotify gelöschte
+// Playlists serverseitig teils wochenlang weiter ausliefert – das können wir
+// nicht erzwingen, also lassen wir den Nutzer sie hier lokal entfernen.
+const HIDDEN_KEY = "dropster.hiddenPlaylists";
+
+function loadHidden(): Set<string> {
+  try {
+    const raw = localStorage.getItem(HIDDEN_KEY);
+    return new Set<string>(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function saveHidden(set: Set<string>) {
+  try {
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify([...set]));
+  } catch {
+    /* localStorage nicht verfügbar – dann eben nur für diese Sitzung */
+  }
+}
+
 // Spotify-Playlist-Link oder -URI in die reine Playlist-ID zerlegen.
 function parsePlaylistId(input: string): string | null {
   const s = input.trim();
@@ -46,6 +68,8 @@ export function PlaylistSelect({
   const [adding, setAdding] = useState(false);
   const [addMsg, setAddMsg] = useState("");
   const [showMore, setShowMore] = useState(false);
+  const [hidden, setHidden] = useState<Set<string>>(loadHidden);
+  const [manage, setManage] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -72,19 +96,19 @@ export function PlaylistSelect({
     const seen = new Set<string>();
     const out: Row[] = [];
     for (const r of manual) {
-      if (!seen.has(r.id)) {
+      if (!seen.has(r.id) && !hidden.has(r.id)) {
         seen.add(r.id);
         out.push(r);
       }
     }
     for (const pl of playlists) {
-      if (!seen.has(pl.id)) {
+      if (!seen.has(pl.id) && !hidden.has(pl.id)) {
         seen.add(pl.id);
         out.push({ id: pl.id, name: pl.name, total: pl.tracks?.total ?? 0 });
       }
     }
     return out.sort((a, b) => a.name.localeCompare(b.name, "de"));
-  }, [manual, playlists]);
+  }, [manual, playlists, hidden]);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -92,6 +116,29 @@ export function PlaylistSelect({
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
+    });
+  }
+
+  // Liste in Dropster ausblenden (dauerhaft gemerkt) – auch aus der Auswahl.
+  function hide(id: string) {
+    setHidden((prev) => {
+      const next = new Set(prev).add(id);
+      saveHidden(next);
+      return next;
+    });
+    setSelected((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
+  function unhideAll() {
+    setHidden(() => {
+      const empty = new Set<string>();
+      saveHidden(empty);
+      return empty;
     });
   }
 
@@ -154,18 +201,28 @@ export function PlaylistSelect({
           {rows.map((r) => {
             const on = selected.has(r.id);
             return (
-              <button
-                key={r.id}
-                className={"pl-pick" + (on ? " on" : "")}
-                onClick={() => toggle(r.id)}
-              >
-                <span className="pl-check" aria-hidden="true">
-                  {on ? "✓" : ""}
-                </span>
-                <span className="pl-name">
-                  {r.name} · {r.total || "?"} Songs
-                </span>
-              </button>
+              <div key={r.id} className="pl-row">
+                <button
+                  className={"pl-pick" + (on ? " on" : "")}
+                  onClick={() => toggle(r.id)}
+                >
+                  <span className="pl-check" aria-hidden="true">
+                    {on ? "✓" : ""}
+                  </span>
+                  <span className="pl-name">
+                    {r.name} · {r.total || "?"} Songs
+                  </span>
+                </button>
+                {manage && (
+                  <button
+                    className="pl-hide"
+                    aria-label={`„${r.name}" ausblenden`}
+                    onClick={() => hide(r.id)}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
@@ -222,6 +279,27 @@ export function PlaylistSelect({
             <button className="linklike" disabled={loading} onClick={load}>
               ↻ Liste neu laden
             </button>
+
+            <div className="pl-manage-row">
+              <button
+                className="linklike"
+                onClick={() => setManage((v) => !v)}
+              >
+                {manage ? "✓ Fertig" : "Listen ausblenden"}
+              </button>
+              {hidden.size > 0 && (
+                <button className="linklike" onClick={unhideAll}>
+                  {hidden.size} ausgeblendet – wieder einblenden
+                </button>
+              )}
+            </div>
+            {manage && (
+              <div className="muted" style={{ fontSize: 12 }}>
+                Tipp auf das <b>×</b> neben einer Liste, um sie aus Dropster zu
+                entfernen. (In Spotify gelöschte Listen hängen dort oft noch
+                nach – so wirst du sie hier trotzdem los.)
+              </div>
+            )}
 
             <div className="hint-box">
               <b>Insider-Tipp:</b> Fremde oder offizielle Listen (z. B. die
