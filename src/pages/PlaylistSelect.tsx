@@ -116,7 +116,14 @@ export function PlaylistSelect({
       setLink("");
       setAddMsg(`„${brief.name}“ hinzugefügt.`);
     } catch (e) {
-      setAddMsg((e as Error).message);
+      const m = (e as Error).message;
+      // 404/403 = Spotify gibt genau diese Playlist der App im Dev-Modus nicht
+      // frei (typisch bei fremden/offiziellen Listen). Klartext statt API-Text.
+      setAddMsg(
+        /40[34]/.test(m)
+          ? "Diese Playlist gibt Spotify der App nicht frei (meist fremde/offizielle Listen). Verlinke am besten eine EIGENE Playlist – oder kopiere die Liste einmal in dein Konto und nimm den Link der Kopie."
+          : m
+      );
     } finally {
       setAdding(false);
     }
@@ -216,9 +223,13 @@ export function PlaylistSelect({
               ↻ Liste neu laden
             </button>
 
-            <div className="muted" style={{ fontSize: 12 }}>
-              Tipp: Die offiziellen Hitster-Playlists gibt es auch auf Spotify –
-              füg eine deinem Konto hinzu, dann spielt ihr mit denselben Songs.
+            <div className="hint-box">
+              <b>Insider-Tipp:</b> Fremde oder offizielle Listen (z. B. die
+              Hitster-Playlists) gibt Spotify der App nicht direkt frei. Der
+              Trick: In Spotify die Liste öffnen → <b>„…" → „Zu Playlist
+              hinzufügen" → „Neue Playlist"</b>. So landet eine <b>eigene
+              Kopie</b> in deinem Konto. Deren Link hier einfügen – schon
+              spielbar.
             </div>
           </div>
         )}
