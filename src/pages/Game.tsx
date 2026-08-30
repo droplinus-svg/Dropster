@@ -401,45 +401,58 @@ export function Game({
       // sonst schluckt ein kaltes iPhone-Spotify den ersten Song.
       await wakeDevice(dev);
 
-      // 1. Anlernen: ALLE noch unbekannten Listen gründlich vorbereiten, BEVOR der
-      //    erste Song kommt (kompletterer Ratetopf ab Song 1). Die längere Zeit
-      //    ist ok, weil der Nutzer live sieht, welche Liste gerade geladen wird –
-      //    und jederzeit abbrechen kann. Bereits geladene Listen (seededRef)
-      //    werden übersprungen, spätere Runden brauchen also nicht mehr anzulernen.
-      const nextUnseeded = () =>
-        playlists.find((pl) => {
-          if (seededRef.current.has(pl.id)) return false;
-          const total = listTotalsRef.current.get(pl.id) ?? 0;
-          const known = knownForList(pl.id);
-          return total > 0 ? known < total : known === 0;
-        });
-
-      const toSeed = playlists.filter((pl) => {
+      // 1. Anlernen – bewusst WENIG und KURZ. Verborgene Listen lernt Dropster nur
+      //    durch Fernsteuern von Spotify; zu lange stumme Fernsteuerung lässt iOS
+      //    die (im Hintergrund pausierte) Spotify-App EINSCHLAFEN, die Verbindung
+      //    reißt ab und der erste Song startet nicht. Genau das passiert bei vielen
+      //    Listen. Deshalb: nur so viel anlernen, dass SOFORT gespielt werden kann.
+      //    Der Ratetopf wächst danach über die Runden (jede Runde liest ohnehin die
+      //    Warteschlange nach) und über den dauerhaften Cache von Abend zu Abend.
+      const needSeed = (pl: PickedPlaylist) => {
         if (seededRef.current.has(pl.id)) return false;
         const total = listTotalsRef.current.get(pl.id) ?? 0;
         const known = knownForList(pl.id);
         return total > 0 ? known < total : known === 0;
-      });
+      };
+      const nextUnseeded = () => playlists.find(needSeed);
 
-      let seededSomething = false;
-      for (let i = 0; i < toSeed.length; i++) {
-        if (abortPrepRef.current) break;
-        const pl = toSeed[i];
-        setPrepStep({ done: i, total: toSeed.length });
-        setPrepStatus(
-          toSeed.length > 1
-            ? `Lerne „${pl.name}" (Liste ${i + 1} von ${toSeed.length}) …`
-            : `Lerne „${pl.name}" …`
-        );
+      const seedOne = async (pl: PickedPlaylist, budgetMs: number) => {
+        setPrepStatus(`Lerne „${pl.name}" …`);
         try {
-          await seedPlaylist(pl.id, dev, 12000);
-          seededSomething = true;
+          // Kurzes Budget: lieber schnell etwas Spielbares als vollständig – der
+          // Rest kommt über die Runden. Kurze Anlern-Häppchen halten die Spotify-
+          // Verbindung wach (keine minutenlange stumme Fernsteuerung).
+          await seedPlaylist(pl.id, dev, budgetMs);
         } catch {
           /* diese Liste konnten wir nicht anlernen */
         }
-        // Nur als erledigt merken, wenn NICHT abgebrochen – sonst später nachholen.
         if (!abortPrepRef.current) seededRef.current.add(pl.id);
         setMemberCount(memberTracksRef.current.length);
+      };
+
+      let seededSomething = false;
+      if (round === 0) {
+        // BREITE VOR TIEFE: von JEDER noch unbekannten Liste ein kleines Häppchen
+        // (~2 s), damit der Topf ab Song 1 über ALLE Listen/Epochen gemischt ist –
+        // nicht nur aus einer Liste. Gesamtzeit gedeckelt, damit das Gerät wach
+        // bleibt; Listen, die nicht mehr ins Fenster passen, kommen ab Runde 2.
+        const toSeed = playlists.filter(needSeed);
+        const seedDeadline = Date.now() + 14000;
+        for (let i = 0; i < toSeed.length; i++) {
+          if (abortPrepRef.current || Date.now() > seedDeadline) break;
+          setPrepStep({ done: i, total: toSeed.length });
+          await seedOne(toSeed[i], 2200);
+          seededSomething = true;
+        }
+      } else {
+        // Spätere Runden: genau EINE noch nicht angelernte Liste nachholen (die in
+        // Runde 0 nicht mehr ins Zeitfenster gepasst hat). Bereits angelernte
+        // Listen wachsen ohnehin beim Spielen (Warteschlange) weiter.
+        const pl = nextUnseeded();
+        if (pl && !abortPrepRef.current) {
+          await seedOne(pl, 3500);
+          seededSomething = true;
+        }
       }
       setPrepStep(null);
 
