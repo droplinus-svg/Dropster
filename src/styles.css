@@ -974,11 +974,16 @@ select, input {
   line-height: 1;
 }
 .pl-hide:active { background: rgba(229, 185, 91, 0.15); }
-.pl-manage-row {
+.pl-toggles {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 6px 20px;
   align-items: center;
+}
+.pl-manage-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .pl-start {
   position: sticky;

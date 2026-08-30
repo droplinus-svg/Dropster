@@ -227,14 +227,37 @@ export function PlaylistSelect({
           })}
         </div>
 
-        {/* Dezenter Auslöser – bewusst KEIN Button-Look, damit er nicht mit den
-            Start-Aktionen verwechselt wird. */}
-        <button
-          className="pl-more-toggle"
-          onClick={() => setShowMore((v) => !v)}
-        >
-          Playlist nicht dabei?
-        </button>
+        {/* Zwei gleichrangige, dezente Auslöser – bewusst KEIN Button-Look,
+            damit sie nicht mit den Start-Aktionen verwechselt werden. */}
+        <div className="pl-toggles">
+          <button
+            className="pl-more-toggle"
+            onClick={() => setShowMore((v) => !v)}
+          >
+            Playlist nicht dabei?
+          </button>
+          <button
+            className="pl-more-toggle"
+            onClick={() => setManage((v) => !v)}
+          >
+            {manage ? "✓ Fertig" : "Listen ausblenden"}
+          </button>
+        </div>
+
+        {manage && (
+          <div className="pl-manage-hint">
+            <div className="muted" style={{ fontSize: 12 }}>
+              Tipp auf das <b>×</b> neben einer Liste, um sie aus Dropster zu
+              entfernen. (In Spotify gelöschte Listen hängen dort oft noch nach –
+              so wirst du sie hier trotzdem los.)
+            </div>
+            {hidden.size > 0 && (
+              <button className="linklike" onClick={unhideAll}>
+                {hidden.size} ausgeblendet – wieder einblenden
+              </button>
+            )}
+          </div>
+        )}
 
         {showMore && (
           <div className="more-panel">
@@ -279,27 +302,6 @@ export function PlaylistSelect({
             <button className="linklike" disabled={loading} onClick={load}>
               ↻ Liste neu laden
             </button>
-
-            <div className="pl-manage-row">
-              <button
-                className="linklike"
-                onClick={() => setManage((v) => !v)}
-              >
-                {manage ? "✓ Fertig" : "Listen ausblenden"}
-              </button>
-              {hidden.size > 0 && (
-                <button className="linklike" onClick={unhideAll}>
-                  {hidden.size} ausgeblendet – wieder einblenden
-                </button>
-              )}
-            </div>
-            {manage && (
-              <div className="muted" style={{ fontSize: 12 }}>
-                Tipp auf das <b>×</b> neben einer Liste, um sie aus Dropster zu
-                entfernen. (In Spotify gelöschte Listen hängen dort oft noch
-                nach – so wirst du sie hier trotzdem los.)
-              </div>
-            )}
 
             <div className="hint-box">
               <b>Insider-Tipp:</b> Fremde oder offizielle Listen (z. B. die
