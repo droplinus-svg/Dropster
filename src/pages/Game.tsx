@@ -359,6 +359,7 @@ export function Game({
       //    (fast) alle Titel kennen. Lesbare Listen sind schon vollständig da
       //    (known >= total) und werden übersprungen; verborgene Listen sammeln
       //    hier per Neu-Mischen einen großen Teil ihrer Songs ein.
+      let seededSomething = false;
       for (const pl of playlists) {
         if (seededRef.current.has(pl.id)) continue;
         const total = listTotalsRef.current.get(pl.id) ?? 0;
@@ -367,6 +368,7 @@ export function Game({
         if (needSeed) {
           try {
             await seedPlaylist(pl.id, dev);
+            seededSomething = true;
           } catch {
             /* diese Liste konnten wir nicht anlernen */
           }
@@ -375,6 +377,18 @@ export function Game({
       }
       // Nach dem Anlernen die sichtbare Topf-Größe aktualisieren.
       setMemberCount(memberTracksRef.current.length);
+
+      // Nach dem Anlernen kurz zur Ruhe kommen lassen (das Anlernen hat gerade
+      // Kontexte angespielt/pausiert) – sonst kollidiert der erste echte Start
+      // mit dem letzten Lern-Vorgang.
+      if (seededSomething) {
+        try {
+          await pausePlayback(dev);
+        } catch {
+          /* egal */
+        }
+        await sleep(500);
+      }
 
       // 2. Gibt es überhaupt einen freien Titel? Wenn NICHT, ist wirklich alles
       //    dran (bzw. von der Gruppe schon gehört) -> Ende-Karte.
@@ -394,7 +408,6 @@ export function Game({
       // statt endlos in „Song wird geladen" hängen zu bleiben.
       const deadline = Date.now() + 14000;
       for (let picks = 0; picks < 6 && cand && Date.now() < deadline; picks++) {
-        const ours = `spotify:playlist:${cand.playlistId}`;
         let advanced = false;
 
         for (let attempt = 0; attempt < 3 && Date.now() < deadline; attempt++) {
@@ -416,12 +429,15 @@ export function Game({
             break;
           }
 
-          // 2) Auf tatsächlichen Start warten (Kaltstart darf kurz dauern).
+          // 2) Auf tatsächlichen Start warten. WICHTIG: Es reicht NICHT, dass die
+          //    richtige Playlist im Kontext steht – nach dem Anlernen stimmt der
+          //    contextUri schon, obwohl noch der (pausierte) Lern-Song drin hängt.
+          //    Echt gestartet ist es nur, wenn GENAU unser Ziel-Titel LÄUFT.
           let started = false;
-          for (let p = 0; p < 6; p++) {
+          for (let p = 0; p < 7; p++) {
             await sleep(400);
             const chk = await getCurrentlyPlaying();
-            if (chk?.contextUri === ours || chk?.id === cand.id) {
+            if (chk?.id === cand.id && chk.isPlaying) {
               started = true;
               break;
             }

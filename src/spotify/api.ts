@@ -200,6 +200,7 @@ export interface NowPlaying {
   year: string | null;
   isrc: string | null;
   contextUri: string | null;
+  isPlaying: boolean;
 }
 
 // "Was laeuft gerade?" – so bekommen wir Titel/Interpret/Jahr, ohne die
@@ -216,6 +217,7 @@ export async function getCurrentlyPlaying(): Promise<NowPlaying | null> {
           external_ids?: { isrc?: string };
         } | null;
         context?: { uri?: string } | null;
+        is_playing?: boolean;
       }
     | undefined
   >("/me/player/currently-playing");
@@ -228,6 +230,7 @@ export async function getCurrentlyPlaying(): Promise<NowPlaying | null> {
     year: it.album?.release_date ? it.album.release_date.slice(0, 4) : null,
     isrc: it.external_ids?.isrc ?? null,
     contextUri: data?.context?.uri ?? null,
+    isPlaying: data?.is_playing ?? false,
   };
 }
 
