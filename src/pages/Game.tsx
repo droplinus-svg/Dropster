@@ -75,6 +75,10 @@ export function Game({
   // Wird gesetzt, wenn der Nutzer das Vorbereiten abbricht – die Schleifen prüfen
   // das und steigen sauber aus.
   const abortPrepRef = useRef(false);
+  // Diagnose: sammelt beim Startversuch, was Spotify tatsächlich meldet. Wird bei
+  // einem Fehlversuch angezeigt, damit wir mit Fakten statt Vermutungen arbeiten.
+  const dbgRef = useRef<string[]>([]);
+  const [debug, setDebug] = useState("");
   const [recheck, setRecheck] = useState(false);
   const [msg, setMsg] = useState("");
   const [playlistDone, setPlaylistDone] = useState(false);
@@ -308,6 +312,9 @@ export function Game({
     );
     if (!fresh.length) return;
     addToPool(fresh, pid);
+    // Zähler SOFORT aktualisieren – so klettert die „… Songs gefunden"-Anzeige
+    // live mit, statt erst am Ende einer Liste zu springen.
+    setMemberCount(memberTracksRef.current.length);
     if (supabaseConfigured) recordTracks(pid, fresh).catch(() => {});
   }
 
@@ -360,6 +367,8 @@ export function Game({
       return;
     }
     abortPrepRef.current = false;
+    dbgRef.current = [];
+    setDebug("");
     setBusy(true);
     setPreparing(true);
     setPrepStep(null);
@@ -375,6 +384,17 @@ export function Game({
           );
         }
         setDeviceId(dev);
+      }
+
+      // Diagnose: Welches Gerät haben wir, und ist es aktiv?
+      try {
+        const devs = await getDevices();
+        const t = devs.find((d) => d.id === dev);
+        dbgRef.current.push(
+          `Gerät: ${t?.name ?? "?"}/${t?.type ?? "?"} aktiv=${t?.is_active ?? "?"} · ${devs.length} Geräte`
+        );
+      } catch {
+        dbgRef.current.push("Geräteliste nicht lesbar");
       }
 
       // Gerät einmalig aktiv wecken, BEVOR wir das erste Mal etwas abspielen –
@@ -459,79 +479,97 @@ export function Game({
         return;
       }
 
-      // Zufälligen freien Titel gezielt anspringen. WICHTIG: Ein Titel, der wegen
-      // eines schlafenden Geräts nicht startet, wird NICHT verbrannt – wir wecken
-      // das Gerät und versuchen DENSELBEN Titel erneut. Nur ein echt nicht
-      // abspielbarer Titel (Play-Befehl abgelehnt) fliegt aus dem Topf.
+      // Einen Play-Befehl absetzen und prüfen, ob GENAU dieser Titel wirklich
+      // läuft. Ergebnis: "ok" | "device" (Gerät schläft) | "bad" (Titel abgelehnt)
+      // | "nostart" (Befehl ging durch, aber es läuft nicht der Ziel-Titel).
+      async function attemptPlay(
+        playFn: () => Promise<void>,
+        target: PoolTrack,
+        tag: string
+      ): Promise<"ok" | "device" | "bad" | "nostart"> {
+        try {
+          await playFn();
+        } catch (err) {
+          const m = (err as Error).message;
+          dbgRef.current.push(`${tag}: FEHLER ${m}`);
+          return isDeviceError(m) ? "device" : "bad";
+        }
+        let last: Awaited<ReturnType<typeof getCurrentlyPlaying>> = null;
+        for (let p = 0; p < 7 && !abortPrepRef.current; p++) {
+          await sleep(400);
+          last = await getCurrentlyPlaying();
+          if (last?.id === target.id && last.isPlaying) {
+            dbgRef.current.push(`${tag}: OK`);
+            return "ok";
+          }
+        }
+        dbgRef.current.push(
+          `${tag}: nostart idMatch=${last?.id === target.id} playing=${last?.isPlaying ?? "?"} läuft="${last?.name ?? "–"}" ctx=…${last?.contextUri?.slice(-8) ?? "?"}`
+        );
+        return "nostart";
+      }
+
       let cand: PoolTrack | null = first;
       let deviceTrouble = false;
-      // Großzügiger Zeitdeckel: Wir versuchen bis zu ~30 s, den ersten Song
-      // wirklich zum Laufen zu bringen. Das ist ok, weil der Nutzer sieht, dass
-      // es arbeitet, und nach ~15 s einen „Nochmal"-Ausweg bekommt.
       const deadline = Date.now() + 30000;
+
       for (
         let picks = 0;
         picks < 8 && cand && Date.now() < deadline && !abortPrepRef.current;
         picks++
       ) {
-        let advanced = false;
+        const c = cand;
 
-        for (
-          let attempt = 0;
-          attempt < 3 && Date.now() < deadline && !abortPrepRef.current;
-          attempt++
-        ) {
-          // 1) Play-Befehl senden.
+        // Strategie 1: gezielt IN der Playlist (behält Kontext fürs Nachlernen).
+        let r = await attemptPlay(
+          () => playTrackInContext(c.playlistId, c.uri, dev),
+          c,
+          "kontext"
+        );
+        if (r === "ok") {
           try {
-            await playTrackInContext(cand.playlistId, cand.uri, dev);
-          } catch (err) {
-            const m = (err as Error).message;
-            if (isDeviceError(m)) {
-              // Gerät eingeschlafen -> wecken und SELBEN Titel erneut versuchen.
-              deviceTrouble = true;
-              await wakeDevice(dev, true);
-              continue;
-            }
-            // Titel wirklich nicht abspielbar -> raus und nächsten Titel.
-            removeFromPool(cand.id);
-            cand = pickMember();
-            advanced = true;
-            break;
+            learnQueue(c.playlistId, await getQueue());
+          } catch {
+            /* egal */
           }
-
-          // 2) Auf tatsächlichen Start warten. WICHTIG: Es reicht NICHT, dass die
-          //    richtige Playlist im Kontext steht – nach dem Anlernen stimmt der
-          //    contextUri schon, obwohl noch der (pausierte) Lern-Song drin hängt.
-          //    Echt gestartet ist es nur, wenn GENAU unser Ziel-Titel LÄUFT.
-          let started = false;
-          for (let p = 0; p < 7 && !abortPrepRef.current; p++) {
-            await sleep(400);
-            const chk = await getCurrentlyPlaying();
-            if (chk?.id === cand.id && chk.isPlaying) {
-              started = true;
-              break;
-            }
-          }
-          if (started) {
-            // Weitere Titel dieser Liste aus der Warteschlange nachlernen.
-            try {
-              const q = await getQueue();
-              learnQueue(cand.playlistId, q);
-            } catch {
-              /* egal */
-            }
-            lockRound(cand, true);
-            return;
-          }
-
-          // Start nicht erkannt: Gerät war vermutlich noch nicht wach -> wecken
-          // und SELBEN Titel erneut (Titel NICHT verbrennen).
-          deviceTrouble = true;
-          await wakeDevice(dev, true);
+          lockRound(c, true);
+          return;
+        }
+        if (r === "bad") {
+          removeFromPool(c.id);
+          cand = pickMember();
+          continue;
         }
 
-        // Nach 3 Versuchen an diesem Titel: nächsten Titel probieren.
-        if (!advanced) cand = pickMember();
+        // Strategie 2 (der verlässliche Notnagel): den Titel DIREKT abspielen,
+        // ganz ohne Playlist-Kontext. Das hängt nicht am (nach dem Anlernen oft
+        // pausierten/verworrenen) Kontext-Zustand – Hauptsache, es kommt Musik.
+        if (r === "device") {
+          await wakeDevice(dev, true);
+          deviceTrouble = true;
+        }
+        r = await attemptPlay(() => playTrack(c.uri, dev), c, "direkt");
+        if (r === "ok") {
+          lockRound(c, true);
+          return;
+        }
+        if (r === "bad") {
+          removeFromPool(c.id);
+          cand = pickMember();
+          continue;
+        }
+
+        // Strategie 3: Gerät wecken und Direkt-Play noch einmal.
+        deviceTrouble = true;
+        await wakeDevice(dev, true);
+        r = await attemptPlay(() => playTrack(c.uri, dev), c, "direkt2");
+        if (r === "ok") {
+          lockRound(c, true);
+          return;
+        }
+
+        // Dieser Titel will partout nicht -> nächsten Titel.
+        cand = pickMember();
       }
 
       // Vom Nutzer abgebrochen -> still zurück, keine Fehlermeldung.
@@ -541,6 +579,7 @@ export function Game({
       }
 
       // Es GÄBE freie Titel, aber der Start klappte gerade nicht.
+      setDebug(dbgRef.current.join("\n"));
       deviceWarmRef.current = false; // beim nächsten Mal frisch wecken
       setPhase("idle");
       setMsg(
@@ -848,6 +887,12 @@ export function Game({
       {msg && !deviceLost && (
         <div className="panel">
           <p className="muted">{msg}</p>
+          {debug && (
+            <details className="diag">
+              <summary>Technische Details (zum Melden)</summary>
+              <pre>{debug}</pre>
+            </details>
+          )}
         </div>
       )}
 

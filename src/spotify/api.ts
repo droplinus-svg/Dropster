@@ -26,6 +26,15 @@ async function api<T>(
     logout();
     throw new Error("Session abgelaufen – bitte neu einloggen.");
   }
+  // Rate-Limit (429): Beim Anlernen vieler Listen feuern wir viele Aufrufe ab.
+  // Spotify nennt im Header "Retry-After" die Wartezeit in Sekunden. Kurz warten
+  // (gedeckelt) und erneut versuchen, statt den Play-Befehl abzuwürgen.
+  if (res.status === 429 && attempt < 3) {
+    const ra = Number(res.headers.get("retry-after"));
+    const waitMs = Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 4000) : 1000;
+    await new Promise((r) => setTimeout(r, waitMs));
+    return api<T>(path, init, attempt + 1);
+  }
   // Spotify-Player-Endpoints liefern gelegentlich 5xx, wenn das Geraet
   // gerade erst aktiv geworden ist. Kurz warten und automatisch erneut
   // versuchen (bis zu 3-mal).

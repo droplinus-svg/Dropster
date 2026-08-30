@@ -907,6 +907,25 @@ select, input {
   text-underline-offset: 3px;
   font-size: 13px;
 }
+.diag {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.diag summary {
+  cursor: pointer;
+  opacity: 0.8;
+}
+.diag pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
 @media (prefers-reduced-motion: reduce) {
   .loading-eq i { animation: none; }
 }
