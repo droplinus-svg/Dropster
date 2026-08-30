@@ -417,41 +417,49 @@ select, input {
 }
 
 /* Umschalter im Spielgruppe-Kasten: Neue Gruppe | Fortsetzen */
+/* Segmented-Control: eine sichtbare „Schiene" mit zwei gleich großen Hälften.
+   Der aktive Teil ist ein angehobener heller Reiter (Schatten + grüner Rand) –
+   NICHT grün gefüllt, damit er nicht wie ein Aktions-Button aussieht. */
 .seg {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 4px;
-  background: rgba(0, 0, 0, 0.28);
-  border-radius: 999px;
+  background: #0f1319;
+  border: 1px solid #272e39;
+  border-radius: 14px;
   padding: 4px;
 }
 .seg-btn {
-  flex: 1;
   width: auto;
   background: transparent;
   color: var(--muted);
-  padding: 10px 12px;
+  padding: 11px 12px;
   font-size: 14px;
   font-weight: 700;
-  border-radius: 999px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .seg-btn.active {
-  background: var(--accent);
-  color: #04180d;
+  background: #2a323f;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1.5px rgba(74, 222, 127, 0.6);
 }
 .seg-count {
   font-size: 12px;
   font-weight: 800;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.12);
   color: inherit;
   border-radius: 999px;
   padding: 1px 7px;
 }
 .seg-btn.active .seg-count {
-  background: rgba(4, 24, 13, 0.18);
+  background: rgba(74, 222, 127, 0.22);
+  color: #8ef0ad;
 }
 
 /* Ausklappbares Menue der bestehenden Gruppen */
