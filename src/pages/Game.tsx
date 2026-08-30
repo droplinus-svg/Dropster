@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   getCurrentlyPlaying,
+  getDevices,
   getPlaylistMembers,
   getQueue,
   pausePlayback,
@@ -10,6 +11,7 @@ import {
   searchAmbientUri,
   setShuffle,
   startPlaylist,
+  transferPlayback,
   type TrackInfo,
 } from "../spotify/api";
 import { burnSong, loadBlacklist } from "../lib/groups";
@@ -69,6 +71,8 @@ export function Game({
   const [playlistDone, setPlaylistDone] = useState(false);
   // Erlaubt Wiederholungen (nach "nochmal von vorn").
   const allowRepeatsRef = useRef(false);
+  // Wurde das Spotify-Gerät in dieser Sitzung schon einmal aktiv geweckt?
+  const deviceWarmRef = useRef(false);
 
   const [playlistTotal, setPlaylistTotal] = useState(0);
   const [memberCount, setMemberCount] = useState(0);
@@ -289,6 +293,31 @@ export function Game({
     memberTracksRef.current = memberTracksRef.current.filter((t) => t.id !== id);
   }
 
+  // Spotify-Gerät „aufwecken": Ein frisch geöffnetes iPhone-Spotify steht zwar
+  // in der Geräteliste, ist aber INAKTIV – ein Play-Befehl weckt es dann oft
+  // nicht. transferPlayback macht das Gerät zum aktiven Ziel; danach greifen die
+  // Play-Befehle zuverlässig. Wir warten kurz, bis Spotify das Gerät als aktiv
+  // meldet. Läuft nur einmal pro Sitzung (danach ist das Gerät warm).
+  async function wakeDevice(dev: string, force = false): Promise<void> {
+    if (deviceWarmRef.current && !force) return;
+    try {
+      await transferPlayback(dev);
+    } catch {
+      /* Transfer optional – wenn er scheitert, versuchen wir es trotzdem */
+    }
+    for (let i = 0; i < 8; i++) {
+      await sleep(350);
+      try {
+        const devs = await getDevices();
+        const d = devs.find((x) => x.id === dev);
+        if (d?.is_active) break;
+      } catch {
+        /* egal */
+      }
+    }
+    deviceWarmRef.current = true;
+  }
+
   // Kernstück: der/die nächste Song. Wir ziehen einen ZUFÄLLIGEN Titel aus dem
   // gemeinsamen Topf (mehrere Listen möglich) und springen gezielt in seine
   // Playlist. Kein Durchschalten, echte Zufalls-Reihenfolge, startet bei 0:00.
@@ -312,6 +341,10 @@ export function Game({
         }
         setDeviceId(dev);
       }
+
+      // Gerät einmalig aktiv wecken, BEVOR wir das erste Mal etwas abspielen –
+      // sonst schluckt ein kaltes iPhone-Spotify den ersten Song.
+      await wakeDevice(dev);
 
       // 1. Jede gewählte Liste einmal gründlich anlernen, von der wir noch nicht
       //    (fast) alle Titel kennen. Lesbare Listen sind schon vollständig da
@@ -342,49 +375,75 @@ export function Game({
         return;
       }
 
-      // Zufälligen freien Titel gezielt anspringen. Bei einem veralteten Eintrag
-      // den nächsten versuchen.
-      for (let tries = 0; tries < 6; tries++) {
-        const cand = tries === 0 ? first : pickMember();
-        if (!cand) break;
+      // Zufälligen freien Titel gezielt anspringen. WICHTIG: Ein Titel, der wegen
+      // eines schlafenden Geräts nicht startet, wird NICHT verbrannt – wir wecken
+      // das Gerät und versuchen DENSELBEN Titel erneut. Nur ein echt nicht
+      // abspielbarer Titel (Play-Befehl abgelehnt) fliegt aus dem Topf.
+      let cand: PoolTrack | null = first;
+      let deviceTrouble = false;
+      for (let picks = 0; picks < 6 && cand; picks++) {
         const ours = `spotify:playlist:${cand.playlistId}`;
-        try {
-          await playTrackInContext(cand.playlistId, cand.uri, dev);
-        } catch {
-          removeFromPool(cand.id);
-          continue;
-        }
-        // Auf den tatsächlichen Start warten (Kaltstart kann kurz dauern).
-        let started = false;
-        for (let p = 0; p < 5; p++) {
-          await sleep(400);
-          const chk = await getCurrentlyPlaying();
-          if (chk?.contextUri === ours || chk?.id === cand.id) {
-            started = true;
+        let advanced = false;
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+          // 1) Play-Befehl senden.
+          try {
+            await playTrackInContext(cand.playlistId, cand.uri, dev);
+          } catch (err) {
+            const m = (err as Error).message;
+            if (isDeviceError(m)) {
+              // Gerät eingeschlafen -> wecken und SELBEN Titel erneut versuchen.
+              deviceTrouble = true;
+              await wakeDevice(dev, true);
+              continue;
+            }
+            // Titel wirklich nicht abspielbar -> raus und nächsten Titel.
+            removeFromPool(cand.id);
+            cand = pickMember();
+            advanced = true;
             break;
           }
+
+          // 2) Auf tatsächlichen Start warten (Kaltstart darf kurz dauern).
+          let started = false;
+          for (let p = 0; p < 6; p++) {
+            await sleep(400);
+            const chk = await getCurrentlyPlaying();
+            if (chk?.contextUri === ours || chk?.id === cand.id) {
+              started = true;
+              break;
+            }
+          }
+          if (started) {
+            // Weitere Titel dieser Liste aus der Warteschlange nachlernen.
+            try {
+              const q = await getQueue();
+              learnQueue(cand.playlistId, q);
+            } catch {
+              /* egal */
+            }
+            lockRound(cand, true);
+            return;
+          }
+
+          // Start nicht erkannt: Gerät war vermutlich noch nicht wach -> wecken
+          // und SELBEN Titel erneut (Titel NICHT verbrennen).
+          deviceTrouble = true;
+          await wakeDevice(dev, true);
         }
-        if (!started) {
-          removeFromPool(cand.id);
-          continue;
-        }
-        // Weitere Titel dieser Liste aus der Warteschlange nachlernen.
-        try {
-          const q = await getQueue();
-          learnQueue(cand.playlistId, q);
-        } catch {
-          /* egal */
-        }
-        lockRound(cand, true);
-        return;
+
+        // Nach 3 Versuchen an diesem Titel: nächsten Titel probieren.
+        if (!advanced) cand = pickMember();
       }
 
-      // Es GÄBE freie Titel, aber der Start klappte gerade nicht -> KEIN
-      // „durchgespielt", sondern freundlich zum erneuten Versuch bitten.
-      setMsg(
-        "Ich konnte gerade keinen Song starten. Tippt bitte noch einmal auf „Song abspielen“ – oder öffnet kurz Spotify und startet dort einen Song."
-      );
+      // Es GÄBE freie Titel, aber der Start klappte gerade nicht.
+      deviceWarmRef.current = false; // beim nächsten Mal frisch wecken
       setPhase("idle");
+      setMsg(
+        deviceTrouble
+          ? "Spotify ist eingeschlafen 😴 Öffne kurz die Spotify-App, starte dort einen Song und lass ihn laufen – und komm dann sofort wieder hierher zurück, bleib nicht in Spotify. Danach hier erneut „Song abspielen“."
+          : "Ich konnte gerade keinen Song starten. Tippt bitte noch einmal auf „Song abspielen“."
+      );
     } catch (e) {
       const m = (e as Error).message;
       if (isDeviceError(m)) {
