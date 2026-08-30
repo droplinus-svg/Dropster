@@ -190,7 +190,10 @@ export function PlaylistSelect({
                 inputMode="url"
                 placeholder="Playlist-Link einfügen"
                 value={link}
-                onChange={(e) => setLink(e.target.value)}
+                onChange={(e) => {
+                  setLink(e.target.value);
+                  if (addMsg) setAddMsg("");
+                }}
               />
               <button
                 className="pl-addbtn"

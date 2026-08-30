@@ -398,12 +398,14 @@ export async function playTrackInContext(
 export async function getPlaylistBrief(
   id: string
 ): Promise<{ id: string; name: string; total: number } | null> {
+  // Volle Antwort (KEIN fields-Filter) – Feld-Projektionen scheitern im
+  // Dev-Mode gerne. Wir picken uns Name + Titelzahl selbst heraus.
   try {
     const data = await api<{
       id?: string;
       name?: string;
       tracks?: { total?: number };
-    }>(`/playlists/${id}?fields=id,name,tracks(total)&ts=${Date.now()}`);
+    }>(`/playlists/${id}?ts=${Date.now()}`);
     if (!data?.name) return null;
     return {
       id: data.id ?? id,
