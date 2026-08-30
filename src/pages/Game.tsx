@@ -237,7 +237,8 @@ export function Game({
   // liefert ein neues Zufalls-Fenster von ~20 Titeln – so sammeln wir auch von
   // verborgenen Listen einen großen Teil der Songs, ganz ohne hörbares
   // Durchspielen.
-  async function seedPlaylist(pid: string, dev: string) {
+  async function seedPlaylist(pid: string, dev: string, budgetMs = 9000) {
+    const stop = Date.now() + budgetMs;
     const ours = `spotify:playlist:${pid}`;
     let np = await getCurrentlyPlaying();
     if (np?.contextUri !== ours) {
@@ -247,16 +248,18 @@ export function Game({
       } catch {
         /* egal */
       }
-      for (let i = 0; i < 16; i++) {
+      for (let i = 0; i < 16 && Date.now() < stop; i++) {
         await sleep(350);
         np = await getCurrentlyPlaying();
         if (np?.contextUri === ours) break;
       }
     }
     const total = listTotalsRef.current.get(pid) ?? 0;
-    // Bis alle bekannt sind – oder bis zwei Durchläufe nichts Neues bringen.
+    // Bis alle bekannt sind – oder bis zwei Durchläufe nichts Neues bringen –
+    // oder bis das Zeitbudget aufgebraucht ist (damit viele Listen nicht ewig
+    // brauchen; der Rest wird über spätere Runden nachgelernt).
     let stale = 0;
-    for (let pass = 0; pass < 12 && stale < 2; pass++) {
+    for (let pass = 0; pass < 12 && stale < 2 && Date.now() < stop; pass++) {
       if (total > 0 && knownForList(pid) >= total) break;
       // Reihenfolge neu würfeln (aus -> ein erzwingt ein echtes Neu-Mischen).
       try {
@@ -355,32 +358,59 @@ export function Game({
       // sonst schluckt ein kaltes iPhone-Spotify den ersten Song.
       await wakeDevice(dev);
 
-      // 1. Jede gewählte Liste einmal gründlich anlernen, von der wir noch nicht
-      //    (fast) alle Titel kennen. Lesbare Listen sind schon vollständig da
-      //    (known >= total) und werden übersprungen; verborgene Listen sammeln
-      //    hier per Neu-Mischen einen großen Teil ihrer Songs ein.
+      // 1. Anlernen – aber NUR so viel wie nötig, damit es egal ist, wie viele
+      //    Listen gewählt sind. Regeln:
+      //    • Ist schon etwas Spielbares im Topf (z. B. lesbare Liste), kommt der
+      //      erste Song SOFORT – ohne Anlernen.
+      //    • Sonst lernen wir Listen an, bis wir etwas haben – zeitlich gedeckelt.
+      //    • Ab der 2. Runde lernen wir pro Runde HÖCHSTENS EINE weitere Liste
+      //      nach, damit der Topf über die Zeit wächst, ohne je lange zu blocken.
       let seededSomething = false;
-      for (const pl of playlists) {
-        if (seededRef.current.has(pl.id)) continue;
-        const total = listTotalsRef.current.get(pl.id) ?? 0;
-        const known = knownForList(pl.id);
-        const needSeed = total > 0 ? known < total : known === 0;
-        if (needSeed) {
+      const nextUnseeded = () =>
+        playlists.find((pl) => {
+          if (seededRef.current.has(pl.id)) return false;
+          const total = listTotalsRef.current.get(pl.id) ?? 0;
+          const known = knownForList(pl.id);
+          return total > 0 ? known < total : known === 0;
+        });
+
+      if (!pickMember()) {
+        // Noch nichts spielbar -> Listen anlernen, bis der Topf etwas hergibt.
+        const seedDeadline = Date.now() + 7000;
+        let pl = nextUnseeded();
+        while (pl && Date.now() < seedDeadline) {
           try {
-            await seedPlaylist(pl.id, dev);
+            await seedPlaylist(pl.id, dev, 4000);
             seededSomething = true;
           } catch {
             /* diese Liste konnten wir nicht anlernen */
           }
+          seededRef.current.add(pl.id);
+          if (pickMember()) break;
+          pl = nextUnseeded();
         }
-        seededRef.current.add(pl.id);
+        // Listen, die wir aus Zeitgründen nicht mehr geschafft haben, bleiben
+        // „unseeded" und werden in späteren Runden nachgeholt.
+      } else if (round > 0) {
+        // Schon spielbar und nicht der allererste Song -> genau EINE Liste
+        // nachlernen, damit der Topf wächst.
+        const pl = nextUnseeded();
+        if (pl) {
+          try {
+            await seedPlaylist(pl.id, dev, 4000);
+            seededSomething = true;
+          } catch {
+            /* egal */
+          }
+          seededRef.current.add(pl.id);
+        }
       }
-      // Nach dem Anlernen die sichtbare Topf-Größe aktualisieren.
+      // Sichtbare Topf-Größe aktualisieren.
       setMemberCount(memberTracksRef.current.length);
 
-      // Nach dem Anlernen kurz zur Ruhe kommen lassen (das Anlernen hat gerade
-      // Kontexte angespielt/pausiert) – sonst kollidiert der erste echte Start
-      // mit dem letzten Lern-Vorgang.
+      // Falls angelernt wurde: kurz zur Ruhe kommen lassen (das Anlernen hat
+      // gerade Kontexte angespielt/pausiert), sonst kollidiert der erste echte
+      // Start mit dem letzten Lern-Vorgang.
       if (seededSomething) {
         try {
           await pausePlayback(dev);
@@ -390,11 +420,20 @@ export function Game({
         await sleep(500);
       }
 
-      // 2. Gibt es überhaupt einen freien Titel? Wenn NICHT, ist wirklich alles
-      //    dran (bzw. von der Gruppe schon gehört) -> Ende-Karte.
+      // 2. Gibt es überhaupt einen freien Titel? Wenn NICHT:
+      //    • Sind noch Listen NICHT angelernt (Zeitbudget) -> kein „durchgespielt",
+      //      sondern freundlich zum erneuten Tippen bitten (nächste Liste kommt).
+      //    • Ist wirklich alles angelernt und dran -> Ende-Karte.
       const first = pickMember();
       if (!first) {
-        setPlaylistDone(true);
+        if (nextUnseeded()) {
+          setPhase("idle");
+          setMsg(
+            "Die nächste Liste wird noch geladen – tippt bitte gleich noch einmal auf „Song abspielen“."
+          );
+        } else {
+          setPlaylistDone(true);
+        }
         return;
       }
 
