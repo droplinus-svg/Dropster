@@ -1,0 +1,23 @@
+# Einheitliche Zeilenenden.
+#
+# Ohne diese Datei speichert Git die Zeilenenden so, wie sie zufaellig auf der
+# Platte liegen. Beim Verschieben oder Kopieren von Ordnern unter Windows kippen
+# die um (CRLF <-> LF) – dann zeigt GitHub Desktop ploetzlich hunderte Dateien
+# als "geaendert" an, obwohl sich inhaltlich NICHTS geaendert hat.
+#
+# "text=auto" heisst: im Repository immer LF, im Windows-Arbeitsverzeichnis
+# automatisch CRLF. Damit kann das nicht mehr passieren.
+* text=auto
+
+# Binaerdateien niemals umwandeln.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.svg  text
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.mp3  binary
+*.pdf  binary
