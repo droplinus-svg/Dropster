@@ -1,8 +1,21 @@
 name: Supabase Keep-Alive
 
-# Haelt die kostenlose Supabase-Datenbank wach: schickt taeglich eine winzige
-# Leseanfrage, damit das Projekt nicht wegen Inaktivitaet pausiert wird.
-# (Supabase pausiert Free-Projekte erst nach ~7 Tagen ganz ohne Aktivitaet.)
+# Haelt die kostenlose Supabase-DB wach: schreibt taeglich einen Zeitstempel in
+# die Tabelle "keepalive". Ein SCHREIBvorgang zaehlt zweifelsfrei als Aktivitaet
+# (eine reine Leseabfrage wurde von Supabases Inaktivitaets-Scan offenbar nicht
+# als ausreichend gewertet -> Pausierungs-Warnung trotz gruener Laeufe).
+#
+# Voraussetzungen (einmalig):
+#   1. Tabelle anlegen (Supabase SQL Editor):
+#        create table if not exists public.keepalive (
+#          id int primary key,
+#          last_ping timestamptz not null default now()
+#        );
+#        alter table public.keepalive enable row level security;
+#        insert into public.keepalive (id, last_ping) values (1, now())
+#          on conflict (id) do nothing;
+#   2. GitHub-Secret SUPABASE_SERVICE_ROLE_KEY hinterlegen
+#      (Supabase -> Project Settings -> API -> service_role).
 
 on:
   schedule:
@@ -13,15 +26,29 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase REST
+      - name: Keepalive-Schreibvorgang
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          code=$(curl -sS -o /dev/null -w "%{http_code}" \
-            "$SUPABASE_URL/rest/v1/spielrunde?select=id&limit=1" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
-          echo "Supabase antwortete mit HTTP $code"
-          # 200 = ok. Alles andere als Fehler werten, damit der Lauf rot wird.
-          test "$code" = "200"
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "FEHLER: Secret SUPABASE_URL oder SUPABASE_SERVICE_ROLE_KEY fehlt."
+            exit 1
+          fi
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+            -X POST "$SUPABASE_URL/rest/v1/keepalive" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates" \
+            -d "{\"id\":1,\"last_ping\":\"$now\"}")
+          echo "Supabase antwortete mit HTTP $code (Zeitstempel $now)"
+          cat /tmp/resp.txt || true
+          echo
+          case "$code" in
+            200|201|204) echo "Keepalive-Schreibvorgang OK."; exit 0 ;;
+            401|403) echo "-> Service-Role-Key falsch oder fehlt."; exit 1 ;;
+            404) echo "-> Tabelle 'keepalive' existiert nicht (SQL aus dem Kopf dieser Datei ausfuehren)."; exit 1 ;;
+            *) echo "-> Unerwarteter Status."; exit 1 ;;
+          esac
